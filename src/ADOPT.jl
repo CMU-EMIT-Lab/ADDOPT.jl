@@ -8,43 +8,11 @@ const MOI = MathOptInterface
 
 abstract type Dynamics end
 
-struct InputDynamics <: Dynamics
-    dynamics_function!::Function
-    input_function!::Function
-    parameters
+abstract type InputDynamics <: Dynamics end
+abstract type TransferDynamics <: Dynamics end
+abstract type PropertyDynamics <: Dynamics end
 
-    Nu::Int
-    input_min::Vector
-    input_max::Vector
-
-    Nr::Int
-    state_min::Vector
-    state_max::Vector
-end
-
-struct TransferDynamics <: Dynamics
-    dynamics_function!::Function
-    parameters
-
-    Ns::Int # 1 for just Temp, 2 for Temp + Mass
-    state_min::Vector
-    state_max::Vector
-end
-
-struct PropertyDynamics <: Dynamics
-    dynamics_function!::Function
-    parameters
-
-    Nα::Int
-    property_min::Vector
-    property_max::Vector
-end
-
-struct Process
-    input_dynamics::InputDynamics
-    transfer_dynamics::TransferDynamics
-    property_dynamics::PropertyDynamics
-end
+include("processes.jl")
 
 struct AdditiveProblem <: MOI.AbstractNLPEvaluator
     process::Process
@@ -124,10 +92,10 @@ function combined_dynamics!(f::Vector, x::Vector, u::Vector, process::Process)
     dα = @view f[(Ns+1):(Ns+Nα)]
     dr = @view f[(Ns+Nα+1):end]
 
-    td.dynamics_function!(ds, s)
-    id.input_function!(ds, r, u)
-    pd.dynamics_function!(dα, α, s)
-    id.dynamics_function!(dr, s, r, u)
+    dynamics_function!(td, ds, s)
+    input_function!(id, ds, r, u) # always call second, additive
+    dynamics_function!(pd, dα, α, s)
+    dynamics_function!(id, dr, s, r, u)
 end
 
 function combined_jump!(xₖ₊₁::Vector, xₖ::Vector, Δt, process::Process)
@@ -328,7 +296,7 @@ function constraint_jacobian_sparsity(idx, colloc!::Function, jump_constraint!::
 
             row_offset += Nx
         end
-        
+
         col_offset = 1 + (Nx + Nu) * (Nk - 1) + ((Nx + Nu) * (Nk - 1)) * (c - 1)
         r, c, _ = findnz(jc_∂xₖ_sparsity)
         append!(rows, r .+ row_offset)
@@ -338,8 +306,8 @@ function constraint_jacobian_sparsity(idx, colloc!::Function, jump_constraint!::
         r, c, _ = findnz(jc_∂xₖ₊₁_sparsity)
         append!(rows, r .+ row_offset)
         append!(cols, c .+ col_offset)
-        col_offset+= Nx
-        
+        col_offset += Nx
+
         r, c, _ = findnz(jc_∂Δt_sparsity)
         append!(rows, r .+ row_offset)
         append!(cols, c .+ col_offset)
