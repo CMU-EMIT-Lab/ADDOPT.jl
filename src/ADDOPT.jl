@@ -1,4 +1,4 @@
-module ADOPT
+module ADDOPT
 
 using MathOptInterface, Ipopt
 using LinearAlgebra, ForwardDiff

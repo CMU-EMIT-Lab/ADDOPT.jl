@@ -1,6 +1,6 @@
-include("ADOPT.jl")
+include("ADDOPT.jl")
 using LinearAlgebra
-using .ADOPT: Furnace, AdditiveProblem, QuadraticObjective, optimize_trajectory
+using .ADDOPT: Furnace, AdditiveProblem, QuadraticObjective, optimize_trajectory
 using Plots
 
 Pₘₐₓ = 20000.0  # W
