@@ -4,19 +4,19 @@ struct UniformPowerDynamics <: InputDynamics
     cₚ
 end
 
-function dynamics_function!(input_dynamics::UniformPowerDynamics, dr, r, u)
+function dynamics_function!(id::UniformPowerDynamics, dr, s, r, u)
 
 end
 
-function input_function!(input_dynamics::UniformPowerDynamics, ds, u)
-    ds[1] += u[1] / (input_dynamics.m * input_dynamics.cₚ)
+function input_function!(id::UniformPowerDynamics, ds, r, u)
+    ds[1] += u[1] / (id.m * id.cₚ)
 end
 
-Nu(input_dynamics::UniformPowerDynamics) = 1
-Nr(input_dynamics::UniformPowerDynamics) = 0
+Nu(id::UniformPowerDynamics) = 1
+Nr(id::UniformPowerDynamics) = 0
 
-input_min(input_dynamics::UniformPowerDynamics) = 0
-input_max(input_dynamics::UniformPowerDynamics) = input_dynamics.max_power
+input_min(id::UniformPowerDynamics) = [0.0]
+input_max(id::UniformPowerDynamics) = [id.max_power]
 
-state_min(input_dynamics::UniformPowerDynamics) = Inf
-state_max(input_dynamics::UniformPowerDynamics) = Inf
+state_min(id::UniformPowerDynamics) = [Inf]
+state_max(id::UniformPowerDynamics) = [Inf]

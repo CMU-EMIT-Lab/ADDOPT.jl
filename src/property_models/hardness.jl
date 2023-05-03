@@ -3,12 +3,12 @@ struct HardnessDynamics <: PropertyDynamics
     τ
 end
 
-function dynamics_function!(property_dynamics::HardnessDynamics, dα, α, s)
+function dynamics_function!(pd::HardnessDynamics, dα, α, s)
     T = s[1]
-    Ġ = A * exp(-τ / T)
-    dα[1] = (1 - α) * Ġ
+    Ġ = pd.A * exp(-pd.τ / T)
+    dα[1] = (1 - α[1]) * Ġ
 end
 
-Nα(property_dynamics::HardnessDynamics) = 1
-property_min(property_dynamics::HardnessDynamics) = 0.0
-property_max(property_dynamics::HardnessDynamics) = 1.0
+Nα(pd::HardnessDynamics) = 1
+property_min(pd::HardnessDynamics) = [0.0]
+property_max(pd::HardnessDynamics) = [1.0]
