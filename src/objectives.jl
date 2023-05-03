@@ -23,7 +23,7 @@ function cost(o::QuadraticObjective, z, idx)
     ex = zeros(eltype(z), Nx)
     eu = zeros(eltype(z), Nu)
     for c in 1:Nc
-        cost += o.tw * z[idx.Δt[c]]
+        # cost += o.tw * z[idx.Δt[c]]
         for k in 1:(Nk-1)
             xₖ = @view z[idx.x[c][k]]
             uₖ = @view z[idx.u[c][k]]
@@ -50,7 +50,7 @@ function gradient(o::QuadraticObjective, grad, z, idx)
     ex = zeros(eltype(z), Nx)
     eu = zeros(eltype(z), Nu)
     for c in 1:Nc
-        grad[idx.Δt[c]] = o.tw
+        # grad[idx.Δt[c]] = o.tw
         for k in 1:(Nk-1)
             xₖ = @view z[idx.x[c][k]]
             uₖ = @view z[idx.u[c][k]]
