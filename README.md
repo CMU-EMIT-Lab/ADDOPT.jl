@@ -1,2 +1,2 @@
-# ADOPT.jl
-ADditive manufacturing with OPTimal trajectories
+# ADDOPT.jl
+ADDitive manufacturing with OPTimal trajectories
