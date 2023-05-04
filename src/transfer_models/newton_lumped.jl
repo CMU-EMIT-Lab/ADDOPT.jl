@@ -13,5 +13,5 @@ function dynamics_function!(td::NewtonLumpedDynamics, ds, s)
 end
 
 Ns(td::NewtonLumpedDynamics) = 1
-state_min(td::NewtonLumpedDynamics) = [td.T∞]
+state_min(td::NewtonLumpedDynamics) = [200.0]
 state_max(td::NewtonLumpedDynamics) = [td.Tₘₐₓ]

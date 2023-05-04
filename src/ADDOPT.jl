@@ -140,7 +140,7 @@ end
 function constraints!(c, z, idx, colloc!, jump_constraint!, xᵢ; xf=nothing, Δt=nothing)
     # Collocation, Initial state, Final State
     Nc, Nkb = idx.Nc, idx.Nkb
-    Nx, Nu = idx.Nstates, idx.Nu
+    Nx, nu = idx.Nstates, idx.Nu
     free_time = isnothing(Δt)
 
     i = 0
@@ -152,8 +152,8 @@ function constraints!(c, z, idx, colloc!, jump_constraint!, xᵢ; xf=nothing, Δ
 
         for k in 1:(Nkb-1)
             xₖ = @view z[idx.x[cyc][k]]
-            uₖ = @view z[idx.u[cyc][k+1]]
-            xₖ₊₁ = @view z[idx.x[cyc][k]]
+            uₖ = @view z[idx.u[cyc][k]]
+            xₖ₊₁ = @view z[idx.x[cyc][k+1]]
             uₖ₊₁ = @view z[idx.u[cyc][k+1]]
             r = @view c[(i+1):(i+Nx)]
             i += Nx
@@ -173,11 +173,13 @@ function constraints!(c, z, idx, colloc!, jump_constraint!, xᵢ; xf=nothing, Δ
 
     @. c[(end-2Nx+1):(end-Nx)] = z[idx.x[1][1]] - xᵢ
     @. c[(end-Nx+1):end] = z[idx.x[Nc][Nkb]] - xf
+    # c[end-Nx+1] = 0
 end
 
-function constraint_jacobian!(jac, z, idx, colloc!::Function, jump_constraint!::Function, sparsity_cache; Δt=nothing)
+function constraint_jacobian!(jac, z, idx, colloc!::Function, jump_constraint!::Function, sparsity_cache; Δt=nothing, prob=nothing)
     Nc, Nk = idx.Nc, idx.Nkb
     Nx = idx.Nstates
+    nu = idx.Nu
     colloc_∂xₖ_sparsity, colloc_∂uₖ_sparsity, colloc_∂xₖ₊₁_sparsity, colloc_∂uₖ₊₁_sparsity, colloc_∂Δt_sparsity, colloc_∂uₖ_color, colloc_∂xₖ_color, colloc_∂xₖ₊₁_color, colloc_∂uₖ₊₁_color, colloc_∂Δt_color, jc_∂xₖ_sparsity, jc_∂xₖ₊₁_sparsity, jc_∂Δt_sparsity, jc_∂xₖ_color, jc_∂xₖ₊₁_color, jc_∂Δt_color = sparsity_cache
     free_time = isnothing(Δt)
 
@@ -210,8 +212,8 @@ function constraint_jacobian!(jac, z, idx, colloc!::Function, jump_constraint!::
 
         for k in 1:(Nk-1)
             xₖ = @view z[idx.x[cyc][k]]
-            uₖ = @view z[idx.u[cyc][k+1]]
-            xₖ₊₁ = @view z[idx.x[cyc][k]]
+            uₖ = @view z[idx.u[cyc][k]]
+            xₖ₊₁ = @view z[idx.x[cyc][k+1]]
             uₖ₊₁ = @view z[idx.u[cyc][k+1]]
 
             if free_time
@@ -222,25 +224,41 @@ function constraint_jacobian!(jac, z, idx, colloc!::Function, jump_constraint!::
             end
 
             colloc_∂xₖ(J∂xₖ, xₖ, uₖ, xₖ₊₁, uₖ₊₁, Δt)
-            # @show J∂xₖ
+            # display(J∂xₖ)
+            # res = zeros(Nx, Nx)
+            # rp = zeros(Nx)
+            # ForwardDiff.jacobian!(res, (r, X) -> colloc!(r, X, uₖ, xₖ₊₁, uₖ₊₁, Δt), rp, xₖ)
+            # display(res)
             r, c, vals = findnz(J∂xₖ)
             jac[i:(i+length(vals)-1)] .= vals
             i += length(vals)
 
             colloc_∂uₖ(J∂uₖ, xₖ, uₖ, xₖ₊₁, uₖ₊₁, Δt)
-            # @show J∂uₖ
+            # display(J∂uₖ)
+            # res = zeros(Nx, nu)
+            # rp = zeros(Nx)
+            # ForwardDiff.jacobian!(res, (r, X) -> colloc!(r, xₖ, X, xₖ₊₁, uₖ₊₁, Δt), rp, uₖ)
+            # display(res)
             r, c, vals = findnz(J∂uₖ)
             jac[i:(i+length(vals)-1)] .= vals
             i += length(vals)
 
             colloc_∂xₖ₊₁(J∂xₖ₊₁, xₖ, uₖ, xₖ₊₁, uₖ₊₁, Δt)
-            # @show J∂xₖ₊₁
+            # display(J∂xₖ₊₁)
+            # res = zeros(Nx, Nx)
+            # rp = zeros(Nx)
+            # ForwardDiff.jacobian!(res, (r, X) -> colloc!(r, xₖ, uₖ, X, uₖ₊₁, Δt), rp, xₖ₊₁)
+            # display(res)
             _, _, vals = findnz(J∂xₖ₊₁)
             jac[i:(i+length(vals)-1)] .= vals
             i += length(vals)
 
             colloc_∂uₖ₊₁(J∂uₖ₊₁, xₖ, uₖ, xₖ₊₁, uₖ₊₁, Δt)
-            # @show J∂uₖ₊₁
+            # display(J∂uₖ₊₁)
+            # res = zeros(Nx, nu)
+            # rp = zeros(Nx)
+            # ForwardDiff.jacobian!(res, (r, X) -> colloc!(r, xₖ, uₖ, xₖ₊₁, X, Δt), rp, uₖ₊₁)
+            # display(res)
             _, _, vals = findnz(J∂uₖ₊₁)
             jac[i:(i+length(vals)-1)] .= vals
             i += length(vals)
@@ -269,6 +287,16 @@ function constraint_jacobian!(jac, z, idx, colloc!::Function, jump_constraint!::
 
     jac[(end-2Nx+1):(end-Nx)] .= 1
     jac[(end-Nx+1):(end)] .= 1
+    # jac[end-Nx+1] = 0
+
+    # res = zeros(idx.Nconstr, idx.Nz)
+    # rp = zeros(idx.Nconstr)
+    # ForwardDiff.jacobian!(res, prob.eval_constraint!, rp, z)
+    # display(res)
+
+    # rs = [r for (r,c) in prob.constraint_jacobian_sparsity]
+    # cs = [c for (r,c) in prob.constraint_jacobian_sparsity]
+    # display(Matrix(sparse(rs, cs, jac)))
 
     # @show jac
 end
@@ -323,7 +351,7 @@ function constraint_jacobian_sparsity(idx, colloc!::Function, jump_constraint!::
                 append!(rows, r .+ row_offset)
                 append!(cols, c)
             end
-            col_offset = NΔt*cyc + (Nx + Nu) * (k - 1) + ((Nx + Nu) * (Nk - 1)) * (cyc - 1)
+            col_offset = NΔt * cyc + (Nx + Nu) * (k - 1) + ((Nx + Nu) * (Nk - 1)) * (cyc - 1)
 
             r, c, _ = findnz(colloc_∂xₖ_sparsity)
             append!(rows, r .+ row_offset)
@@ -402,7 +430,7 @@ end
 
 function MOI.eval_constraint_jacobian(prob::AdditiveProblem, jac, z)
     # display("Constraint jacobian")
-    constraint_jacobian!(jac, z, prob.idx, prob.colloc!, prob.jump_constraint!, prob.sparsity_cache, Δt=prob.Δt)
+    constraint_jacobian!(jac, z, prob.idx, prob.colloc!, prob.jump_constraint!, prob.sparsity_cache, Δt=prob.Δt, prob=prob)
 end
 
 MOI.features_available(prob::AdditiveProblem) = [:Grad, :Jac]
