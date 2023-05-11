@@ -458,7 +458,7 @@ function optimize_trajectory(problem::AdditiveProblem;
         z₀ = zeros(Nz)
         for c in 1:Nc
             if isnothing(problem.Δt)
-                z₀[idx.Δt[c]] = 0.005
+                z₀[idx.Δt[c]] = 0.04
             end
             for k in 1:Nkb
                 z₀[idx.x[c][k]] .= problem.x̄
@@ -481,7 +481,7 @@ function optimize_trajectory(problem::AdditiveProblem;
     for c in 1:Nc
         if isnothing(problem.Δt)
             Δtc = z[idx.Δt[c]]
-            MOI.add_constraint(solver, Δtc, MOI.LessThan(0.01))
+            MOI.add_constraint(solver, Δtc, MOI.LessThan(0.1))
             MOI.add_constraint(solver, Δtc, MOI.GreaterThan(0.001))
         end
 
