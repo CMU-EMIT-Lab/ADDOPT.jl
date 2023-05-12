@@ -1,9 +1,14 @@
 using LinearAlgebra
+using ForwardDiff
 
 abstract type Objective end
 
 function cost(o::Objective, z, idx)
     return 0.0
+end
+
+function gradient(o::Objective, grad, z, idx)
+    ForwardDiff.gradient!(grad, (Z) -> cost(o, Z, idx), z)
 end
 
 struct QuadraticObjective <: Objective
@@ -23,13 +28,16 @@ function cost(o::QuadraticObjective, z, idx)
     ex = zeros(eltype(z), Nx)
     eu = zeros(eltype(z), Nu)
     for c in 1:Nc
-        # cost += o.tw * z[idx.Δt[c]]
+        
         for k in 1:(Nk-1)
             xₖ = @view z[idx.x[c][k]]
             uₖ = @view z[idx.u[c][k]]
 
             @. ex = xₖ - x̄
             @. eu = uₖ - ū
+            if !isnothing(idx.Δt)
+                cost += o.tw * z[idx.Δt[c][k]]
+            end
             cost += 0.5 * (ex' * Q * ex + eu' * R * eu)
         end
     end
@@ -50,15 +58,17 @@ function gradient(o::QuadraticObjective, grad, z, idx)
     ex = zeros(eltype(z), Nx)
     eu = zeros(eltype(z), Nu)
     for c in 1:Nc
-        # grad[idx.Δt[c]] = o.tw
+        
         for k in 1:(Nk-1)
             xₖ = @view z[idx.x[c][k]]
             uₖ = @view z[idx.u[c][k]]
 
             @. ex = xₖ - x̄
             @. eu = uₖ - ū
-            # @show size(grad[idx.x[c][k]])
-            # @show size(Q*ex)
+
+            if !isnothing(idx.Δt)
+                grad[idx.Δt[c][k]] = o.tw
+            end
             grad[idx.x[c][k]] .= Q * ex
             grad[idx.u[c][k]] .= R * eu
         end
