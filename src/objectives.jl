@@ -11,6 +11,10 @@ function gradient(o::Objective, grad, z, idx)
     ForwardDiff.gradient!(grad, (Z) -> cost(o, Z, idx), z)
 end
 
+function hessian(o::Objective, hess, z, idx)
+    ForwardDiff.hessian!(hess, (Z) -> cost(o, Z, idx), z)
+end
+
 struct QuadraticObjective <: Objective
     Q
     R
