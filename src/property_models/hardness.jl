@@ -1,14 +1,25 @@
 struct HardnessDynamics <: PropertyDynamics
     A
     τ
+
+    n
+    T
+    Ġ
+
+    function HardnessDynamics(A, τ; n=1)
+        T = zeros(n)
+        Ġ = zeros(n)
+        
+        return new(A, τ, n, T, Ġ)
+    end
 end
 
-function dynamics_function!(pd::HardnessDynamics, dα, α, s)
-    T = s[1]
-    Ġ = pd.A * exp(-pd.τ / T)
-    dα[1] = (1 - α[1]) * Ġ
-end
+Nα(pd::HardnessDynamics) = pd.n * 1
+property_min(pd::HardnessDynamics) = zeros(pd.n)
+property_max(pd::HardnessDynamics) = ones(pd.n)
 
-Nα(pd::HardnessDynamics) = 1
-property_min(pd::HardnessDynamics) = [0.0]
-property_max(pd::HardnessDynamics) = [1.0]
+function dynamics_function!(pd::HardnessDynamics, td::TransferDynamics, dα, α, s)
+    temperature!(td, pd.T, s)
+    @. pd.Ġ = pd.A * exp(-pd.τ / pd.T)
+    @. dα = (1 - α) * pd.Ġ
+end

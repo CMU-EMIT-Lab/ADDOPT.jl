@@ -105,7 +105,7 @@ function combined_dynamics!(f, x, u, process::Process)
 
     dynamics_function!(td, ds, s)
     input_function!(id, ds, r, u) # always call second, additive
-    dynamics_function!(pd, dα, α, s)
+    dynamics_function!(pd, td, dα, α, s)
     dynamics_function!(id, dr, s, r, u)
 end
 
