@@ -1,19 +1,19 @@
 struct UniformPowerDynamics <: InputDynamics
-    max_power
-    m
-    cₚ
+    max_power::Float64
+    m::Float64
+    cₚ::Float64
 end
 
-function dynamics_function!(id::UniformPowerDynamics, dr, s, r, u)
+function dynamics_function!(id::UniformPowerDynamics, dr::AbstractVector{Ty}, s, r, u) where Ty
 
 end
 
-function input_function!(id::UniformPowerDynamics, ds, r, u)
+function input_function!(id::UniformPowerDynamics, ds::AbstractVector{Ty}, r, u) where Ty
     ds[1] += u[1] / (id.m * id.cₚ)
 end
 
-Nu(id::UniformPowerDynamics) = 1
-Nr(id::UniformPowerDynamics) = 0
+@inline Nu(id::UniformPowerDynamics)::Int = 1
+@inline Nr(id::UniformPowerDynamics)::Int = 0
 
 input_min(id::UniformPowerDynamics) = [0.0]
 input_max(id::UniformPowerDynamics) = [id.max_power]

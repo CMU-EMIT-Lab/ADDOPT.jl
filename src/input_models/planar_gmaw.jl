@@ -1,53 +1,64 @@
 struct PlanarGMAWDynamics <: InputDynamics
-    l
+    nrows::Int
+    ncols::Int
+
+    l::Float64
     xₙ
     zₙ
 
     k
-    ρ
-    cₚ
-    T∞
-    wire_diam
+    ρ::Float64
+    cₚ::Float64
+    T∞::Float64
+    wire_diam::Float64
 
-    h∞
-    h₀
-    hₐᵣ
-    η
-    γᵣ
-    γₕ
-    wₓ
-    bₕ
+    h∞::Float64
+    h₀::Float64
+    hₐᵣ::Float64
+    η::Float64
+    γᵣ::Float64
+    γₕ::Float64
+    wₓ::Float64
+    bₕ::Float64
 
-    F
-    ZW
+    F_cache::Dict{DataType, Any}
+    ZW_cache::Dict{DataType, Any}
 
     function PlanarGMAWDynamics(nrows, ncols, l, xₙ, zₙ, k, ρ, cₚ, T∞, wire_diam, h∞, h₀, hₐᵣ, η, γᵣ, γₕ, wₓ, bₕ)
-        F = zeros(nrows * ncols)
-        ZW = zeros(nrows * ncols)
+        F = Dict{DataType, Any}()
+        ZW = Dict{DataType, Any}()
+        # F = zeros(nrows * ncols)
+        # ZW = zeros(nrows * ncols)
 
-        return new(l, xₙ, zₙ, k, ρ, cₚ, T∞, wire_diam, h∞, h₀, hₐᵣ, η, γᵣ, γₕ, wₓ, bₕ, F, ZW)
+        return new(nrows, ncols, l, xₙ, zₙ, k, ρ, cₚ, T∞, wire_diam, h∞, h₀, hₐᵣ, η, γᵣ, γₕ, wₓ, bₕ, F, ZW)
     end
 end
 
-Nu(id::PlanarGMAWDynamics) = 5 # torch position (x,z), trim, WFS, TS
-Nr(id::PlanarGMAWDynamics) = 2 # meltpool root and radius
+Nu(id::PlanarGMAWDynamics) = 4 # vx, vz, trim, WFS (m/s for speeds)
+Nr(id::PlanarGMAWDynamics) = 4 # torch position (x,z), meltpool radius, meltpool root (z) (m)
 
-input_min(id::PlanarGMAWDynamics) = [-Inf; -Inf; 0.5; 0; 0]
-input_max(id::PlanarGMAWDynamics) = [Inf; Inf; 1.2; 120.0; 20.0]
+input_min(id::PlanarGMAWDynamics) = [-Inf; -Inf; 0.5; 0.0001] # vx, vz, trim, WFS (m/s for speeds)
+input_max(id::PlanarGMAWDynamics) = [Inf; Inf; 1.2; 0.085]
 
-state_min(id::PlanarGMAWDynamics) = [0.0; 0.0]
-state_max(id::PlanarGMAWDynamics) = [Inf; Inf]
+state_min(id::PlanarGMAWDynamics) = [-Inf; -Inf; 0.0; 0.0]
+state_max(id::PlanarGMAWDynamics) = [Inf; Inf; Inf; Inf]
 
-function dynamics_function!(id::PlanarGMAWDynamics, dr, s, r, u)
+function dynamics_function!(id::PlanarGMAWDynamics, dr::AbstractVector{Ty}, s, r, u) where Ty
     N = length(s) ÷ 2
     E = view(s, 1:N)
     m = view(s, (N+1):2N)
-    rₘₚ, zₘₚ = r[1], r[2]
-    xₜ, zₜ, trim, WFS, TS = u[1], u[2], u[3], u[4], u[5]
-    ZW, l, xₙ, zₙ = id.ZW, id.l, id.xₙ, id.zₙ
+    n_rows, n_cols = id.nrows, id.ncols
+    xₜ, zₜ, rₘₚ, zₘₚ = r[1], r[2], r[3], r[4]
+    vx, vz, trim, WFS = u[1], u[2], u[3], u[4]
+    TS = sqrt(vx^2 + vz^2)
+    l, xₙ, zₙ = id.l, id.xₙ, id.zₙ
     k, ρ, cₚ, T∞, T₀, wire_diam = id.k, id.ρ, id.cₚ, id.T∞, id.T₀, id.wire_diam
     h∞, h₀, hₐᵣ, η, γᵣ, γₕ, wₓ, bₕ = id.h∞, id.h₀, id.hₐᵣ, id.η, id.γᵣ, id.γₕ, id.wₓ, id.bₕ
 
+    ZW = get!(id.ZW_cache, Ty) do
+        zeros(Ty, n_rows*n_cols)
+    end::Vector{Ty}
+    
     z̄ₘₚ = zₘₚ
     # Compute steady state meltpool radius and z location
     r̄ₘₚ = WFS > 0 && TS > 0 ? wire_diam * √(WFS / TS) * √(1 / 2) : wire_diam
@@ -58,19 +69,27 @@ function dynamics_function!(id::PlanarGMAWDynamics, dr, s, r, u)
         z̄ₘₚ = sum(ZW) / ZW_sum + l
     end
 
-    dr[1] = γᵣ * (r̄ₘₚ - rₘₚ)
-    dr[2] = γₕ * (z̄ₘₚ - zₘₚ)
+    dr[1] = vx
+    dr[2] = vz
+    dr[3] = γᵣ * (r̄ₘₚ - rₘₚ)
+    dr[4] = γₕ * (z̄ₘₚ - zₘₚ)
 end
 
-function input_function!(id::PlanarGMAWDynamics, ds, r, u)
+function input_function!(id::PlanarGMAWDynamics, ds::AbstractVector{Ty}, r, u) where Ty
     N = length(s) ÷ 2
     dE = view(ds, 1:N)
     dm = view(ds, (N+1):2N)
-    rₘₚ, zₘₚ = r[1], r[2]
-    xₜ, zₜ, trim, WFS, TS = u[1], u[2], u[3], u[4], u[5]
-    F, l, xₙ, zₙ = id.F, id.l, id.xₙ, id.zₙ
+    n_rows, n_cols = id.nrows, id.ncols
+    xₜ, zₜ, rₘₚ, zₘₚ = r[1], r[2], r[3], r[4]
+    vx, vz, trim, WFS = u[1], u[2], u[3], u[4]
+    TS = sqrt(vx^2 + vz^2)
+    l, xₙ, zₙ = id.l, id.xₙ, id.zₙ
     k, ρ, cₚ, T∞, T₀, wire_diam = id.k, id.ρ, id.cₚ, id.T∞, id.T₀, id.wire_diam
     h∞, h₀, hₐᵣ, η, γᵣ, γₕ, wₓ, bₕ = id.h∞, id.h₀, id.hₐᵣ, id.η, id.γᵣ, id.γₕ, id.wₓ, id.bₕ
+
+    F = get!(id.F_cache, Ty) do
+        zeros(Ty, n_rows*n_cols)
+    end::Vector{Ty}
 
     # V = f(trim)
     # I = f(wfs, trim, v, ctwd)

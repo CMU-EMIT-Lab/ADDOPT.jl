@@ -1,25 +1,36 @@
 struct HardnessDynamics <: PropertyDynamics
-    A
-    τ
+    A::Float64
+    τ::Float64
 
-    n
-    T
-    Ġ
+    n::Int
+    T_cache::Dict{DataType, Any}
+    # Ġ
 
     function HardnessDynamics(A, τ; n=1)
-        T = zeros(n)
-        Ġ = zeros(n)
-        
-        return new(A, τ, n, T, Ġ)
+
+
+        return new(A, τ, n, Dict{DataType, Any}())
     end
 end
 
-Nα(pd::HardnessDynamics) = pd.n * 1
+@inline Nα(pd::HardnessDynamics)::Int = pd.n * 1
 property_min(pd::HardnessDynamics) = zeros(pd.n)
 property_max(pd::HardnessDynamics) = ones(pd.n)
 
-function dynamics_function!(pd::HardnessDynamics, td::TransferDynamics, dα, α, s)
-    temperature!(td, pd.T, s)
-    @. pd.Ġ = pd.A * exp(-pd.τ / pd.T)
-    @. dα = (1 - α) * pd.Ġ
+function dynamics_function!(pd::HardnessDynamics, td::TransferDynamics, dα::AbstractVector{Ty}, α, s) where Ty
+    # T = zeros(eltype(dα), pd.n)
+    T = get!(pd.T_cache, Ty) do
+        zeros(Ty, Nα(pd))
+    end::Vector{Ty}
+    # Ġ = zeros(eltype(dα), pd.n)
+
+    temperature!(td, T, s)
+    # T = s[1]
+# @.
+    # Ġ = pd.A * exp(-pd.τ / T)
+    # @show typeof(dα)
+    # @show typeof(α)
+    # @show typeof(T)
+    @. dα = (1 - α) * pd.A * exp(-pd.τ / T)
+    # dα[1] = (1 - α[1]) * Ġ
 end

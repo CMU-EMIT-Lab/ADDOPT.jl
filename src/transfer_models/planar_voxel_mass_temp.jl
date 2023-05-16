@@ -1,30 +1,30 @@
 struct PlanarVoxelMassEnergyDynamics <: TransferDynamics
-    nrows
-    ncols
+    nrows::Int
+    ncols::Int
 
-    l
+    l::Float64
     xₙ
     zₙ
 
     k
-    ρ
-    cₚ
-    T∞
-    wire_diam
+    ρ::Float64
+    cₚ::Float64
+    T∞::Float64
+    wire_diam::Float64
 
-    h∞
-    h₀
+    h∞::Float64
+    h₀::Float64
 
-    B
-    C
-    K
-    T
+    B_cache::Dict{DataType, Any}
+    C_cache::Dict{DataType, Any}
+    K_cache::Dict{DataType, Any}
+    T_cache::Dict{DataType, Any}
 
     function PlanarVoxelMassEnergyDynamics(nrows, ncols, l, xₙ, zₙ, k, ρ, cₚ, T∞, wire_diam, h∞, h₀)
-        B = zeros(nrows*ncols)
-        C = zeros(nrows*ncols)
-        K = zeros(nrows*ncols)
-        T = zeros(nrows*ncols)
+        B = Dict{DataType, Any}()
+        C = Dict{DataType, Any}()
+        K = Dict{DataType, Any}()
+        T = Dict{DataType, Any}()
         
         return new(nrows, ncols, l, xₙ, zₙ, k, ρ, cₚ, T∞, wire_diam, h∞, h₀, B, C, K, T)
     end
@@ -35,12 +35,25 @@ state_min(td::PlanarVoxelMassEnergyDynamics) = zeros(Ns(td))
 state_max(td::PlanarVoxelMassEnergyDynamics) = Inf * ones(Ns(td))
 
 
-function dynamics_function!(td::PlanarVoxelMassEnergyDynamics, ds, s)
+function dynamics_function!(td::PlanarVoxelMassEnergyDynamics, ds::AbstractVector{Ty}, s) where Ty
     n_rows, n_cols = td.nrows, td.ncols
     l, xₙ, zₙ = td.l, td.xₙ, td.zₙ
     k, ρ, cₚ, T∞, T₀, wire_diam = td.k, td.ρ, td.cₚ, td.T∞, td.T₀, td.wire_diam
     h∞, h₀ = td.h∞, td.h₀#, td.hₐᵣ, td.η, td.γᵣ, td.γₕ, td.wₓ, td.bₕ
-    B, C, K, T = td.B, td.C, td.K, td.T
+    # B, C, K, T = td.B, td.C, td.K, td.T
+    
+    B = get!(td.B_cache, Ty) do
+        zeros(Ty, n_rows*n_cols)
+    end::Vector{Ty}
+    C = get!(td.C_cache, Ty) do
+        zeros(Ty, n_rows*n_cols)
+    end::Vector{Ty}
+    K = get!(td.K_cache, Ty) do
+        zeros(Ty, n_rows*n_cols)
+    end::Vector{Ty}
+    T = get!(td.T_cache, Ty) do
+        zeros(Ty, n_rows*n_cols)
+    end::Vector{Ty}
 
     μ(mi, mj) = min(mi, mj) / mi
 

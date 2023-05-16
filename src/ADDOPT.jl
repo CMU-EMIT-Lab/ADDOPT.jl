@@ -6,6 +6,7 @@ using Symbolics, SparseArrays, SparseDiffTools
 using SparseArrays: findnz
 const MOI = MathOptInterface
 
+using InteractiveUtils
 abstract type Dynamics end
 
 abstract type InputDynamics <: Dynamics end
@@ -19,6 +20,13 @@ Ns(td::TransferDynamics) = 0
 
 include("processes.jl")
 include("objectives.jl")
+
+fₖ_cache = Dict{DataType,Any}()
+fₖ₊₁_cache = Dict{DataType,Any}()
+fₘ_cache = Dict{DataType,Any}()
+xₘ_cache = Dict{DataType,Any}()
+uₘ_cache = Dict{DataType,Any}()
+ẋₘ_cache = Dict{DataType,Any}()
 
 struct AdditiveProblem <: MOI.AbstractNLPEvaluator
     process::Process
@@ -36,16 +44,16 @@ struct AdditiveProblem <: MOI.AbstractNLPEvaluator
     # Nkc::Int # Number of knots per cooling cycle
     Nc::Int  # Number of cycles
 
-    eval_constraint!::Function
+    #eval_constraint!::Function
     constraint_jacobian_sparsity
 
     idx
     sparsity_cache
-    colloc!
+    #colloc!
     jump_constraint!
 
-    x₀
-    x̄
+    x₀::Vector{Float64}
+    x̄::Vector{Float64}
 
     function AdditiveProblem(process, objective, #Nx, Ny, l, 
         Nkb, Nc, x₀; x̄=nothing, Δt=nothing)
@@ -56,15 +64,18 @@ struct AdditiveProblem <: MOI.AbstractNLPEvaluator
         f!(ẋ, x, u) = combined_dynamics!(ẋ, x, u, process)
         fd!(xₖ₊₁, xₖ, Δt) = combined_jump!(xₖ₊₁, xₖ, Δt, process)
 
-        colloc!(r, xₖ, uₖ, xₖ₊₁, uₖ₊₁, Δt) = collocation_constraint!(r, xₖ, uₖ, xₖ₊₁, uₖ₊₁, f!, Δt)
+        #colloc!(r, xₖ, uₖ, xₖ₊₁, uₖ₊₁, Δt) = collocation_constraint!(r, xₖ, uₖ, xₖ₊₁, uₖ₊₁, f!, Δt)#; fₖ, fₖ₊₁, fₘ, xₘ, uₘ, ẋₘ), fₖ, fₖ₊₁, fₘ, xₘ, uₘ, ẋₘ
         jump_constraint!(r, xₖ, xₖ₊₁, Δt) = j_constraint!(r, xₖ, xₖ₊₁, fd!, Δt)
-        eval_constraint!(c, z) = constraints!(c, z, idx, colloc!, jump_constraint!, x₀; xf=x̄, Δt=Δt)
+        # eval_constraint!(c, z) = constraints!(c, z, idx, colloc!, jump_constraint!, x₀; xf=x̄, Δt=Δt)
 
-        con_jacobian_sparsity, sparsity_cache = constraint_jacobian_sparsity(idx, colloc!, jump_constraint!, Δt=Δt)
+        con_jacobian_sparsity, sparsity_cache = constraint_jacobian_sparsity(idx, process, jump_constraint!, Δt=Δt)
 
         new(process, objective, Δt, Nkb, Nc,
-            eval_constraint!, con_jacobian_sparsity,
-            idx, sparsity_cache, colloc!, jump_constraint!, x₀, x̄)#Nx, Ny, l,
+            #eval_constraint!, 
+            con_jacobian_sparsity,
+            idx, sparsity_cache, #colloc!, 
+            jump_constraint!, 
+            x₀, x̄)#Nx, Ny, l,
     end
 end
 
@@ -95,14 +106,14 @@ function combined_dynamics!(f, x, u, process::Process)
     # Ns, Nα(pd) = Ns(td)(td), Nα(pd)(pd)
     # Nr, Nu = Nr(id), Nu(id)
 
-    s = @view x[1:Ns(td)]
-    α = @view x[(Ns(td)+1):(Ns(td)+Nα(pd))]
-    r = @view x[(Ns(td)+Nα(pd)+1):end]
-
-    ds = @view f[1:Ns(td)]
-    dα = @view f[(Ns(td)+1):(Ns(td)+Nα(pd))]
-    dr = @view f[(Ns(td)+Nα(pd)+1):end]
-
+    s = view(x, 1:Ns(td))
+    α = view(x, (Ns(td)+1):(Ns(td)+Nα(pd)))
+    r = view(x, (Ns(td)+Nα(pd)+1):(Ns(td)+Nα(pd)+Nr(id)))
+ 
+    ds = view(f, 1:Ns(td))
+    dα = view(f, (Ns(td)+1):(Ns(td)+Nα(pd)))
+    dr = view(f, (Ns(td)+Nα(pd)+1):(Ns(td)+Nα(pd)+Nr(id)))
+ 
     dynamics_function!(td, ds, s)
     input_function!(id, ds, r, u) # always call second, additive
     dynamics_function!(pd, td, dα, α, s)
@@ -113,22 +124,53 @@ function combined_jump!(xₖ₊₁, xₖ, Δt, process::Process)
     @. xₖ₊₁[:] = xₖ[:]
 end
 
-function collocation_constraint!(r, xₖ, uₖ, xₖ₊₁, uₖ₊₁, f!, Δt)
+function collocation_constraint!(process, r::AbstractVector{T}, xₖ, uₖ, xₖ₊₁, uₖ₊₁, Δt; fₖ_cache::Dict{DataType,Any}=fₖ_cache, fₖ₊₁_cache::Dict{DataType,Any}=fₖ₊₁_cache, fₘ_cache::Dict{DataType,Any}=fₘ_cache, xₘ_cache::Dict{DataType,Any}=xₘ_cache, uₘ_cache::Dict{DataType,Any}=uₘ_cache, ẋₘ_cache::Dict{DataType,Any}=ẋₘ_cache) where {T}
     Nx = length(xₖ)
-    fₖ = zeros(eltype(r), Nx)
-    fₖ₊₁ = zeros(eltype(r), Nx)
-    fₘ = zeros(eltype(r), Nx)
+    nu = length(uₖ)
 
-    f!(fₖ, xₖ, uₖ)
-    f!(fₖ₊₁, xₖ₊₁, uₖ₊₁)
+    # get!(cache, T) do
+    #     AbstractVector{T}(N)
+    # end::AbstractVector{T}
 
-    xₘ = @. 0.5 * (xₖ + xₖ₊₁) + (Δt[1] / 8.0) * (fₖ - fₖ₊₁)
-    uₘ = @. 0.5 * (uₖ + uₖ₊₁)
-    ẋₘ = @. (3 / (2 * Δt[1])) * (xₖ₊₁ - xₖ) - 0.25 * (fₖ + fₖ₊₁)
+    fₖ = get!(fₖ_cache, T) do
+        zeros(T, Nx)
+    end::Vector{T}
+    fₖ₊₁ = get!(fₖ₊₁_cache, T) do
+        zeros(T, Nx)
+    end::Vector{T}
+    fₘ = get!(fₘ_cache, T) do
+        zeros(T, Nx)
+    end::Vector{T}
+    xₘ = get!(xₘ_cache, T) do
+        zeros(T, Nx)
+    end::Vector{T}
+    uₘ = get!(uₘ_cache, T) do
+        zeros(T, nu)
+    end::Vector{T}
+    ẋₘ = get!(ẋₘ_cache, T) do
+        zeros(T, Nx)
+    end::Vector{T}
 
-    f!(fₘ, xₘ, uₘ)
 
-    @. r[:] = fₘ - ẋₘ
+    # if isnothing(fₖ)
+    # fₖ = zeros(eltype(r), Nx)
+    # fₖ₊₁ = zeros(eltype(r), Nx)
+    # fₘ = zeros(eltype(r), Nx)
+    # xₘ = zeros(eltype(r), Nx)
+    # uₘ = zeros(eltype(r), nu)
+    # ẋₘ = zeros(eltype(r), Nx)
+    # end
+
+    combined_dynamics!(fₖ, xₖ, uₖ, process)
+    combined_dynamics!(fₖ₊₁, xₖ₊₁, uₖ₊₁, process)
+
+    xₘ .= @. 0.5 * (xₖ + xₖ₊₁) + (Δt[1] / 8.0) * (fₖ - fₖ₊₁)
+    uₘ .= @. 0.5 * (uₖ + uₖ₊₁)
+    ẋₘ .= @. (3 / (2 * Δt[1])) * (xₖ₊₁ - xₖ) - 0.25 * (fₖ + fₖ₊₁)
+
+    combined_dynamics!(fₘ, xₘ, uₘ, process)
+
+    r[:] .= fₘ .- ẋₘ
 end
 
 function j_constraint!(r, xₖ, xₖ₊₁, fd!, Δt)
@@ -139,11 +181,17 @@ function j_constraint!(r, xₖ, xₖ₊₁, fd!, Δt)
     @. r[:] = xₖ₊₁ - xp
 end
 
-function constraints!(c, z, idx, colloc!, jump_constraint!, xᵢ; xf=nothing, Δt=nothing)
+function constraints!(process::Process, c, z, idx, jump_constraint!, xᵢ; xf=nothing, Δt=nothing)
     # Collocation, Initial state, Final State
     Nc, Nkb = idx.Nc, idx.Nkb
     Nx, nu = idx.Nstates, idx.Nu
     free_time = isnothing(Δt)
+    # fₖ = zeros(eltype(c), Nx)
+    # fₖ₊₁ = zeros(eltype(c), Nx)
+    # fₘ = zeros(eltype(c), Nx)
+    # xₘ = zeros(eltype(c), Nx)
+    # uₘ = zeros(eltype(c), nu)
+    # ẋₘ = zeros(eltype(c), Nx)
 
     i = 0
     for cyc in 1:Nc
@@ -161,7 +209,8 @@ function constraints!(c, z, idx, colloc!, jump_constraint!, xᵢ; xf=nothing, Δ
             r = @view c[(i+1):(i+Nx)]
             i += Nx
 
-            colloc!(r, xₖ, uₖ, xₖ₊₁, uₖ₊₁, Δt)
+            collocation_constraint!(process, r, xₖ, uₖ, xₖ₊₁, uₖ₊₁, Δt)
+            # colloc!(r, xₖ, uₖ, xₖ₊₁, uₖ₊₁, Δt)#, fₖ, fₖ₊₁, fₘ, xₘ, uₘ, ẋₘ)
         end
 
         if cyc < Nc
@@ -179,18 +228,31 @@ function constraints!(c, z, idx, colloc!, jump_constraint!, xᵢ; xf=nothing, Δ
     # c[end-Nx+1] = 0
 end
 
-function constraint_jacobian!(jac, z, idx, colloc!::Function, jump_constraint!::Function, sparsity_cache; Δt=nothing, prob=nothing)
+function constraint_jacobian!(process::Process, jac, z, idx, jump_constraint!::Function, sparsity_cache; Δt=nothing, prob=nothing)
     Nc, Nk = idx.Nc, idx.Nkb
     Nx = idx.Nstates
     nu = idx.Nu
     colloc_∂xₖ_sparsity, colloc_∂uₖ_sparsity, colloc_∂xₖ₊₁_sparsity, colloc_∂uₖ₊₁_sparsity, colloc_∂Δt_sparsity, colloc_∂uₖ_color, colloc_∂xₖ_color, colloc_∂xₖ₊₁_color, colloc_∂uₖ₊₁_color, colloc_∂Δt_color, jc_∂xₖ_sparsity, jc_∂xₖ₊₁_sparsity, jc_∂Δt_sparsity, jc_∂xₖ_color, jc_∂xₖ₊₁_color, jc_∂Δt_color = sparsity_cache
     free_time = isnothing(Δt)
 
-    colloc_∂Δt(J, xₖ, uₖ, xₖ₊₁, uₖ₊₁, Δt) = forwarddiff_color_jacobian!(J, (r, X) -> colloc!(r, xₖ, uₖ, xₖ₊₁, uₖ₊₁, X), Δt, colorvec=colloc_∂Δt_color)
-    colloc_∂xₖ(J, xₖ, uₖ, xₖ₊₁, uₖ₊₁, Δt) = forwarddiff_color_jacobian!(J, (r, X) -> colloc!(r, X, uₖ, xₖ₊₁, uₖ₊₁, Δt), xₖ, colorvec=colloc_∂xₖ_color)
-    colloc_∂uₖ(J, xₖ, uₖ, xₖ₊₁, uₖ₊₁, Δt) = forwarddiff_color_jacobian!(J, (r, X) -> colloc!(r, xₖ, X, xₖ₊₁, uₖ₊₁, Δt), uₖ, colorvec=colloc_∂uₖ_color)
-    colloc_∂xₖ₊₁(J, xₖ, uₖ, xₖ₊₁, uₖ₊₁, Δt) = forwarddiff_color_jacobian!(J, (r, X) -> colloc!(r, xₖ, uₖ, X, uₖ₊₁, Δt), xₖ₊₁, colorvec=colloc_∂xₖ₊₁_color)
-    colloc_∂uₖ₊₁(J, xₖ, uₖ, xₖ₊₁, uₖ₊₁, Δt) = forwarddiff_color_jacobian!(J, (r, X) -> colloc!(r, xₖ, uₖ, xₖ₊₁, X, Δt), uₖ₊₁, colorvec=colloc_∂uₖ₊₁_color)
+    # fₖ = zeros(ForwardDiff.Dual{T,V,N} where {T,V,N}, Nx)
+    # fₖ₊₁ = zeros(ForwardDiff.Dual{T,V,N} where {T,V,N}, Nx)
+    # fₘ = zeros(ForwardDiff.Dual{T,V,N} where {T,V,N}, Nx)
+    # xₘ = zeros(ForwardDiff.Dual{T,V,N} where {T,V,N}, Nx)
+    # uₘ = zeros(ForwardDiff.Dual{T,V,N} where {T,V,N}, nu)
+    # ẋₘ = zeros(ForwardDiff.Dual{T,V,N} where {T,V,N}, Nx)
+
+    # cfg = ForwardDiff.JacobianConfig(f!, y, x, ForwardDiff.Chunk{3}())
+    colloc_∂Δt(J, xₖ, uₖ, xₖ₊₁, uₖ₊₁, Δt) = forwarddiff_color_jacobian!(J, (r, X) -> collocation_constraint!(process, r, xₖ, uₖ, xₖ₊₁, uₖ₊₁, X), Δt, colorvec=colloc_∂Δt_color)
+    colloc_∂xₖ(J, xₖ, uₖ, xₖ₊₁, uₖ₊₁, Δt) = forwarddiff_color_jacobian!(J, (r, X) -> collocation_constraint!(process, r, X, uₖ, xₖ₊₁, uₖ₊₁, Δt), xₖ, colorvec=colloc_∂xₖ_color)
+    colloc_∂uₖ(J, xₖ, uₖ, xₖ₊₁, uₖ₊₁, Δt) = forwarddiff_color_jacobian!(J, (r, X) -> collocation_constraint!(process, r, xₖ, X, xₖ₊₁, uₖ₊₁, Δt), uₖ, colorvec=colloc_∂uₖ_color)
+    colloc_∂xₖ₊₁(J, xₖ, uₖ, xₖ₊₁, uₖ₊₁, Δt) = forwarddiff_color_jacobian!(J, (r, X) -> collocation_constraint!(process, r, xₖ, uₖ, X, uₖ₊₁, Δt), xₖ₊₁, colorvec=colloc_∂xₖ₊₁_color)
+    colloc_∂uₖ₊₁(J, xₖ, uₖ, xₖ₊₁, uₖ₊₁, Δt) = forwarddiff_color_jacobian!(J, (r, X) -> collocation_constraint!(process, r, xₖ, uₖ, xₖ₊₁, X, Δt), uₖ₊₁, colorvec=colloc_∂uₖ₊₁_color)
+    #     , fₖ, fₖ₊₁, fₘ, xₘ, uₘ, ẋₘ
+    # , fₖ, fₖ₊₁, fₘ, xₘ, uₘ, ẋₘ
+    # , fₖ, fₖ₊₁, fₘ, xₘ, uₘ, ẋₘ
+    # , fₖ, fₖ₊₁, fₘ, xₘ, uₘ, ẋₘ
+    # , fₖ, fₖ₊₁, fₘ, xₘ, uₘ, ẋₘ
 
     jc_∂xₖ(J, xₖ, xₖ₊₁, Δt) = forwarddiff_color_jacobian!(J, (r, X) -> jump_constraint!(r, X, xₖ₊₁, Δt), xₖ, colorvec=jc_∂xₖ_color)
     jc_∂xₖ₊₁(J, xₖ, xₖ₊₁, Δt) = forwarddiff_color_jacobian!(J, (r, X) -> jump_constraint!(r, xₖ, X, Δt), xₖ₊₁, colorvec=jc_∂xₖ₊₁_color)
@@ -218,6 +280,12 @@ function constraint_jacobian!(jac, z, idx, colloc!::Function, jump_constraint!::
             uₖ = @view z[idx.u[cyc][k]]
             xₖ₊₁ = @view z[idx.x[cyc][k+1]]
             uₖ₊₁ = @view z[idx.u[cyc][k+1]]
+
+            # @show eltype(xₖ  )
+            # @show eltype(uₖ  )
+            # @show eltype(xₖ₊₁)
+            # @show eltype(uₖ₊₁)
+
 
             colloc_∂xₖ(J∂xₖ, xₖ, uₖ, xₖ₊₁, uₖ₊₁, Δt)
             _, _, vals = findnz(J∂xₖ)
@@ -284,7 +352,7 @@ function constraint_jacobian!(jac, z, idx, colloc!::Function, jump_constraint!::
     # @show jac
 end
 
-function constraint_jacobian_sparsity(idx, colloc!::Function, jump_constraint!::Function; Δt=nothing)
+function constraint_jacobian_sparsity(idx, process::Process, jump_constraint!::Function; Δt=nothing)
     Nx, Nu = idx.Nstates, idx.Nu
     Nk, Nc = idx.Nkb, idx.Nc
     Nconstr = idx.Nconstr
@@ -297,13 +365,20 @@ function constraint_jacobian_sparsity(idx, colloc!::Function, jump_constraint!::
     ud2 = 5 * ones(Symbolics.Num, Nu)
     Δtd = 6 * ones(Symbolics.Num, 1)
 
-    colloc_∂xₖ_sparsity = Symbolics.jacobian_sparsity((r, X) -> colloc!(r, X, ud1, xd2, ud2, Δtd), rd, xd1)
+    # fₖ = zeros(Symbolics.Num, Nx)
+    # fₖ₊₁ = zeros(Symbolics.Num, Nx)
+    # fₘ = zeros(Symbolics.Num, Nx)
+    # xₘ = zeros(Symbolics.Num, Nx)
+    # uₘ = zeros(Symbolics.Num, Nu)
+    # ẋₘ = zeros(Symbolics.Num, Nx)
+
+    colloc_∂xₖ_sparsity = Symbolics.jacobian_sparsity((r, X) -> collocation_constraint!(process, r, X, ud1, xd2, ud2, Δtd), rd, xd1)
     display(colloc_∂xₖ_sparsity)
-    colloc_∂uₖ_sparsity = Symbolics.jacobian_sparsity((r, X) -> colloc!(r, xd1, X, xd2, ud2, Δtd), rd, ud1)
+    colloc_∂uₖ_sparsity = Symbolics.jacobian_sparsity((r, X) -> collocation_constraint!(process, r, xd1, X, xd2, ud2, Δtd), rd, ud1)
     display(colloc_∂uₖ_sparsity)
-    colloc_∂xₖ₊₁_sparsity = Symbolics.jacobian_sparsity((r, X) -> colloc!(r, xd1, ud1, X, ud2, Δtd), rd, xd2)
-    colloc_∂uₖ₊₁_sparsity = Symbolics.jacobian_sparsity((r, X) -> colloc!(r, xd1, ud1, xd2, X, Δtd), rd, ud2)
-    colloc_∂Δt_sparsity = Symbolics.jacobian_sparsity((r, X) -> colloc!(r, xd1, ud1, xd2, ud2, X), rd, Δtd)
+    colloc_∂xₖ₊₁_sparsity = Symbolics.jacobian_sparsity((r, X) -> collocation_constraint!(process, r, xd1, ud1, X, ud2, Δtd), rd, xd2)
+    colloc_∂uₖ₊₁_sparsity = Symbolics.jacobian_sparsity((r, X) -> collocation_constraint!(process, r, xd1, ud1, xd2, X, Δtd), rd, ud2)
+    colloc_∂Δt_sparsity = Symbolics.jacobian_sparsity((r, X) -> collocation_constraint!(process, r, xd1, ud1, xd2, ud2, X), rd, Δtd)
     if free_time
         display(colloc_∂Δt_sparsity)
     end
@@ -402,11 +477,12 @@ function MOI.eval_objective_gradient(prob::AdditiveProblem, grad_f, z)
 end
 
 function MOI.eval_constraint(prob::AdditiveProblem, c, z)
-    prob.eval_constraint!(c, z)
+    constraints!(prob.process, c, z, prob.idx, prob.jump_constraint!, prob.x₀, xf=prob.x̄, Δt=prob.Δt)
+    # prob.eval_constraint!(c, z)
 end
 
 function MOI.eval_constraint_jacobian(prob::AdditiveProblem, jac, z)
-    constraint_jacobian!(jac, z, prob.idx, prob.colloc!, prob.jump_constraint!, prob.sparsity_cache, Δt=prob.Δt, prob=prob)
+    constraint_jacobian!(prob.process, jac, z, prob.idx, prob.jump_constraint!, prob.sparsity_cache, Δt=prob.Δt, prob=prob)
 end
 
 MOI.features_available(prob::AdditiveProblem) = [:Grad, :Jac]
@@ -451,13 +527,17 @@ function optimize_trajectory(problem::AdditiveProblem;
     display("Checking objective function...")
     @time MOI.eval_objective(problem, z₀)
     @time MOI.eval_objective(problem, z₀)
+    @time MOI.eval_objective(problem, z₀)
     display("Checking objective gradient...")
+    @time MOI.eval_objective_gradient(problem, gt, z₀)
     @time MOI.eval_objective_gradient(problem, gt, z₀)
     @time MOI.eval_objective_gradient(problem, gt, z₀)
     display("Checking constraint function...")
     @time MOI.eval_constraint(problem, ct, z₀)
     @time MOI.eval_constraint(problem, ct, z₀)
+    @time MOI.eval_constraint(problem, ct, z₀)
     display("Checking constraint jacobian...")
+    @time MOI.eval_constraint_jacobian(problem, jt, z₀)
     @time MOI.eval_constraint_jacobian(problem, jt, z₀)
     @time MOI.eval_constraint_jacobian(problem, jt, z₀)
 
