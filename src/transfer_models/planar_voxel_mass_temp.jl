@@ -3,8 +3,8 @@ struct PlanarVoxelMassEnergyDynamics <: TransferDynamics
     ncols::Int
 
     l::Float64
-    xₙ
-    zₙ
+    xₙ::Vector{Float64}
+    zₙ::Vector{Float64}
 
     k
     ρ::Float64

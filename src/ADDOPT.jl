@@ -20,6 +20,7 @@ Ns(td::TransferDynamics) = 0
 
 include("processes.jl")
 include("objectives.jl")
+include("rollout.jl")
 
 fₖ_cache = Dict{DataType,Any}()
 fₖ₊₁_cache = Dict{DataType,Any}()
@@ -28,10 +29,10 @@ xₘ_cache = Dict{DataType,Any}()
 uₘ_cache = Dict{DataType,Any}()
 ẋₘ_cache = Dict{DataType,Any}()
 
-struct AdditiveProblem <: MOI.AbstractNLPEvaluator
-    process::Process
+struct AdditiveProblem{OB<:Objective, ID<:InputDynamics, TD<:TransferDynamics, PD<:PropertyDynamics} <: MOI.AbstractNLPEvaluator
+    process::Process{ID, TD, PD}
 
-    objective::Objective
+    objective::OB
     # objective_gradient!::Union{Function,Nothing}
     # hessian::Union{Function,Matrix,Nothing}
 
@@ -55,8 +56,8 @@ struct AdditiveProblem <: MOI.AbstractNLPEvaluator
     x₀::Vector{Float64}
     x̄::Vector{Float64}
 
-    function AdditiveProblem(process, objective, #Nx, Ny, l, 
-        Nkb, Nc, x₀; x̄=nothing, Δt=nothing)
+    function AdditiveProblem(process::Process{ID, TD, PD}, objective::OB, #Nx, Ny, l, 
+        Nkb, Nc, x₀; x̄=nothing, Δt=nothing) where {OB<:Objective, ID<:InputDynamics, TD<:TransferDynamics, PD<:PropertyDynamics}
         id, td, pd = process.input_dynamics, process.transfer_dynamics, process.property_dynamics
         free_time = isnothing(Δt)
         idx = generate_z_indices(Nkb, Nc, Nu(id), Nr(id), Ns(td), Nα(pd), free_time=free_time)
@@ -70,7 +71,7 @@ struct AdditiveProblem <: MOI.AbstractNLPEvaluator
 
         con_jacobian_sparsity, sparsity_cache = constraint_jacobian_sparsity(idx, process, jump_constraint!, Δt=Δt)
 
-        new(process, objective, Δt, Nkb, Nc,
+        new{OB, ID, TD, PD}(process, objective, Δt, Nkb, Nc,
             #eval_constraint!, 
             con_jacobian_sparsity,
             idx, sparsity_cache, #colloc!, 
@@ -101,7 +102,7 @@ function generate_z_indices(Nkb, Nc, Nu, Nr, Ns, Nα; free_time=false)
     return (Nz=Nz, Nstates=(Nstates + Nr), s=s, α=α, r=r, u=u, x=x, Δt=Δt, tc=tc, Nconstr=Nconstr, Nkb=Nkb, Nc=Nc, Nu=Nu)
 end
 
-function combined_dynamics!(f, x, u, process::Process)
+function combined_dynamics!(f, x, u, process::Process{ID, TD, PD}) where {ID, TD, PD}
     td, pd, id = process.transfer_dynamics, process.property_dynamics, process.input_dynamics
     # Ns, Nα(pd) = Ns(td)(td), Nα(pd)(pd)
     # Nr, Nu = Nr(id), Nu(id)
@@ -124,7 +125,7 @@ function combined_jump!(xₖ₊₁, xₖ, Δt, process::Process)
     @. xₖ₊₁[:] = xₖ[:]
 end
 
-function collocation_constraint!(process, r::AbstractVector{T}, xₖ, uₖ, xₖ₊₁, uₖ₊₁, Δt; fₖ_cache::Dict{DataType,Any}=fₖ_cache, fₖ₊₁_cache::Dict{DataType,Any}=fₖ₊₁_cache, fₘ_cache::Dict{DataType,Any}=fₘ_cache, xₘ_cache::Dict{DataType,Any}=xₘ_cache, uₘ_cache::Dict{DataType,Any}=uₘ_cache, ẋₘ_cache::Dict{DataType,Any}=ẋₘ_cache) where {T}
+function collocation_constraint!(process::Process{ID, TD, PD}, r::AbstractVector{T}, xₖ, uₖ, xₖ₊₁, uₖ₊₁, Δt; fₖ_cache::Dict{DataType,Any}=fₖ_cache, fₖ₊₁_cache::Dict{DataType,Any}=fₖ₊₁_cache, fₘ_cache::Dict{DataType,Any}=fₘ_cache, xₘ_cache::Dict{DataType,Any}=xₘ_cache, uₘ_cache::Dict{DataType,Any}=uₘ_cache, ẋₘ_cache::Dict{DataType,Any}=ẋₘ_cache) where {T, ID, TD, PD}
     Nx = length(xₖ)
     nu = length(uₖ)
 
