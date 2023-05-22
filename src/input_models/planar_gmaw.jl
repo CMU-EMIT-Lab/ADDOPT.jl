@@ -27,8 +27,6 @@ struct PlanarGMAWDynamics <: InputDynamics
     function PlanarGMAWDynamics(nrows, ncols, l, xₙ, zₙ, k, ρ, cₚ, T∞, wire_diam, h∞, h₀, hₐᵣ, η, γᵣ, γₕ, wₓ, bₕ)
         F = Dict{DataType, Any}()
         ZW = Dict{DataType, Any}()
-        # F = zeros(nrows * ncols)
-        # ZW = zeros(nrows * ncols)
 
         return new(nrows, ncols, l, xₙ, zₙ, k, ρ, cₚ, T∞, wire_diam, h∞, h₀, hₐᵣ, η, γᵣ, γₕ, wₓ, bₕ, F, ZW)
     end
