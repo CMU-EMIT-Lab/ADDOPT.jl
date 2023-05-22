@@ -1,9 +1,9 @@
 module ADDOPT
 
-using MathOptInterface, Ipopt
-using LinearAlgebra, ForwardDiff
-using Symbolics, SparseArrays, SparseDiffTools
-using SparseArrays: findnz
+@time using MathOptInterface, Ipopt
+@time using LinearAlgebra, ForwardDiff
+@time using Symbolics, SparseArrays, SparseDiffTools
+@time using SparseArrays: findnz
 const MOI = MathOptInterface
 
 using InteractiveUtils
@@ -21,6 +21,7 @@ Ns(td::TransferDynamics) = 0
 include("processes.jl")
 include("objectives.jl")
 include("rollout.jl")
+include("initial_guess.jl")
 
 fₖ_cache = Dict{DataType,Any}()
 fₖ₊₁_cache = Dict{DataType,Any}()
@@ -93,7 +94,7 @@ function generate_z_indices(Nkb, Nc, Nu, Nr, Ns, Nα; free_time=false)
     α = [[((Ns+1):(Nstates)) .+ offset(k, c) for k in 1:Nkb] for c in 1:Nc]                 # z[α[c][k]] gives α_(c,k), vector
     r = [[((Nstates+1):(Nstates+Nr)) .+ offset(k, c) for k in 1:Nkb] for c in 1:Nc]         # z[r[c][k]] gives r_(c,k), vector
     u = [[((Nstates+Nr+1):(Nstates+Nr+Nu)) .+ offset(k, c) for k in 1:Nkb] for c in 1:Nc]   # z[u[c][k]] gives u_(c,k), vector
-    Δt = free_time ? [[(Nstates + Nr + Nu + 1) + offset(k, c) for k in 1:Nkb] for c in 1:Nc] : nothing # z[Δt[c][k]] gives Δt_(c,k), scalar ##vector singleton
+    Δt = free_time ? [[(Nstates + Nr + Nu + 1) + offset(k, c) for k in 1:Nkb] for c in 1:Nc] : nothing # z[Δt[c][k]] gives Δt_(c,k), scalar
     x = [[(1:(Nstates+Nr)) .+ offset(k, c) for k in 1:Nkb] for c in 1:Nc]                   # z[x[c][k]] gives x_(c,k), vector
     tc = [Npercycle * c for c in 1:Nc]                                                      # z[tc[c]] gives tc_c, scalar
 
@@ -475,6 +476,7 @@ end
 
 function MOI.eval_objective_gradient(prob::AdditiveProblem, grad_f, z)
     gradient(prob.objective, grad_f, z, prob.idx)
+    # ForwardDiff.gradient!(grad_f, (z) -> cost(prob.objective, z, prob.idx), z)
 end
 
 function MOI.eval_constraint(prob::AdditiveProblem, c, z)

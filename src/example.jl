@@ -1,7 +1,7 @@
 include("ADDOPT.jl")
 using LinearAlgebra
-using .ADDOPT: Furnace, AdditiveProblem, QuadraticObjective, optimize_trajectory
-using Plots
+using .ADDOPT: Furnace, AdditiveProblem, QuadraticObjective, MinTimeObjective, optimize_trajectory, marshall_z
+@time using Plots
 
 Pₘₐₓ = 20000.0  # W
 T∞ = 293.15    # K
@@ -23,7 +23,7 @@ objective = QuadraticObjective(Q, R, Qf, x̄, ū, 1e4)
 Nk = 1000
 problem = AdditiveProblem(process, objective, Nk, 1, x₀, x̄=x̄, Δt=0.04)
 
-z, X, U, Δt, tc = optimize_trajectory(problem; max_iter=3000, c_tol=1.0e-6)
+z, X, U, Δt, tc = optimize_trajectory(problem; max_iter=10_000, c_tol=1.0e-6)
 T = [X[1][i][1] for i in 1:Nk]
 y = [X[1][i][2] for i in 1:Nk]
 P = [U[1][i][1] for i in 1:Nk]
@@ -37,3 +37,26 @@ end
 plot(t, T, label="Temperature (K)", xlabel="Time (s)", color="orange")
 plot!(t, P ./ 10, label="Power (W)", color="purple")
 plot!(twinx(), t, y, ylabel="Phase Fraction", label=nothing)#, xlabel="Time (s)")
+
+#####
+objective = MinTimeObjective(1)
+problem = AdditiveProblem(process, objective, Nk, 1, x₀, x̄=x̄)
+tc = [0.5]
+Δt = 0.04
+z₀ = marshall_z(problem.idx, X, U, Δt, tc; free_time=true)
+@show z₀
+
+z, X, U, Δt, tc = optimize_trajectory(problem; max_iter=10_000, c_tol=1.0e-6, z₀=z₀, tol=1.0e-4)
+T = [X[1][i][1] for i in 1:Nk]
+y = [X[1][i][2] for i in 1:Nk]
+P = [U[1][i][1] for i in 1:Nk]
+
+if isnothing(problem.Δt)
+    t = cumsum([Δt[1][i] for i in 1:Nk])
+else
+    t = (1:Nk) .* problem.Δt
+end
+
+plot(t, T, label="Temperature (K)", xlabel="Time (s)", color="orange")
+plot!(t, P ./ 10, label="Power (W)", color="purple")
+plot!(twinx(), t, y, ylabel="Phase Fraction", label=nothing)

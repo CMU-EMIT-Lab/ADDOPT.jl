@@ -32,7 +32,6 @@ l = 0.001 # m, aka 1mm
 
 process = PlanarWAAMHardness(nrows, ncols, l, xₙ, zₙ, k, ρ, cₚ, T∞, wire_diam, h∞, h₀, hₐᵣ, η, γᵣ, γₕ, wₓ, bₕ, A, τ)
 
-
 Q = Diagonal([1e-7; 1e6])
 R = Diagonal([1e-9])
 Qf = 10 * Q
@@ -42,20 +41,21 @@ ū = [0]
 objective = QuadraticObjective(Q, R, Qf, x̄, ū, 1e4)
 
 # Nx, Ny, l should be moved to the transfer process
-Nk = 1000
-problem = AdditiveProblem(process, objective, Nk, 1, x₀, x̄=x̄, Δt=0.05)
+Nk = 200
+Nc = 1
+problem = AdditiveProblem(process, objective, Nk, 1, x₀, x̄=x̄, Δt=0.02)
 
-z, X, U, Δt, tc = optimize_trajectory(problem; max_iter=3000, c_tol=1.0e-6)
-T = [X[1][i][1] for i in 1:Nk]
-y = [X[1][i][2] for i in 1:Nk]
-P = [U[1][i][1] for i in 1:Nk]
+# z, X, U, Δt, tc = optimize_trajectory(problem; max_iter=3000, c_tol=1.0e-6)
+# T = [X[1][i][1] for i in 1:Nk]
+# y = [X[1][i][2] for i in 1:Nk]
+# P = [U[1][i][1] for i in 1:Nk]
 
-if isnothing(problem.Δt)
-    t = cumsum([Δt[1][i] for i in 1:Nk])
-else
-    t = (1:Nk) .* problem.Δt
-end
+# if isnothing(problem.Δt)
+#     t = cumsum([Δt[1][i] for i in 1:Nk])
+# else
+#     t = (1:Nk) .* problem.Δt
+# end
 
-plot(t, T, label="Temperature (K)", xlabel="Time (s)", color="orange")
-plot!(t, P ./ 10, label="Power (W)", color="purple")
-plot!(twinx(), t, y, ylabel="Phase Fraction", label=nothing)#, xlabel="Time (s)")
+# plot(t, T, label="Temperature (K)", xlabel="Time (s)", color="orange")
+# plot!(t, P ./ 10, label="Power (W)", color="purple")
+# plot!(twinx(), t, y, ylabel="Phase Fraction", label=nothing)#, xlabel="Time (s)")
