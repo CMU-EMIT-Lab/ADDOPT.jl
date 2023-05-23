@@ -15,13 +15,13 @@ Q = Diagonal([1e-7; 1e6])
 R = Diagonal([1e-9])
 Qf = 10 * Q
 x₀ = [T∞; 0.0]
-x̄ = [T∞ + 2; 0.8]
+x̄ = [T∞; 0.9]
 ū = [0]
-objective = QuadraticObjective(Q, R, Qf, x̄, ū, 1e4)
+objective = QuadraticObjective(Q, R, Qf, x̄, ū)#, 1e4)
 
 # Nx, Ny, l should be moved to the transfer process
 Nk = 250
-problem = AdditiveProblem(process, objective, Nk, 3Nk, 2, x₀, x̄=x̄, Δtb=0.04, Δtc=0.04, final_constraint=false)
+problem = AdditiveProblem(process, objective, Nk, 3Nk, 3, x₀, x̄=x̄, Δtb=0.04, Δtc=0.04, final_constraint=false)
 
 z, X, U, Δt = optimize_trajectory(problem; max_iter=10_000, c_tol=1.0e-6)
 Nt = length(X)

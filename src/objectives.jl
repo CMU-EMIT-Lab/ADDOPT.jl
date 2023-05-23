@@ -21,7 +21,62 @@ struct QuadraticObjective <: Objective
     Qf::Diagonal{Float64,Vector{Float64}}
     x̄::Vector{Float64}
     ū::Vector{Float64}
-    tw::Float64
+end
+
+function hessian_structure(o::QuadraticObjective, idx)
+    Nx, Nkb, Nkc, Nc, Nu = idx.Nstates, idx.Nkb, idx.Nkc, idx.Nc, idx.Nu
+    rows = []
+    cols = []
+
+    for c in 1:Nc
+        for k in 1:Nkb
+            append!(rows,  idx.x[c][k])
+            append!(cols,  idx.x[c][k])
+
+            append!(rows,  idx.u[c][k])
+            append!(cols,  idx.u[c][k])
+        end
+
+        for k in (Nkb+1):(Nkb+Nkc)
+            if (c < Nc) || (k < Nkb+Nkc)
+                append!(rows,  idx.x[c][k])
+                append!(cols,  idx.x[c][k])
+            end
+        end
+    end
+
+    append!(rows, idx.x[Nc][Nkb+Nkc])
+    append!(cols, idx.x[Nc][Nkb+Nkc])
+
+    return collect(zip(rows, cols))
+end
+
+function hessian_values(o::QuadraticObjective, idx, H)
+    Nx, Nkb, Nkc, Nc, Nu = idx.Nstates, idx.Nkb, idx.Nkc, idx.Nc, idx.Nu
+
+    Qv = diag(o.Q)
+    Rv = diag(o.R)
+    Qfv = diag(o.Qf)
+
+    i = 0
+    for c in 1:Nc
+        for k in 1:Nkb
+            H[(1+i):(length(Qv)+i)] .= Qv
+            i += length(Qv)
+            H[(1+i):(length(Rv)+i)] .= Rv
+            i += length(Rv)
+        end
+
+        for k in (Nkb+1):(Nkb+Nkc)
+            if (c < Nc) || (k < Nkb+Nkc)
+                H[(1+i):(length(Qv)+i)] .= Qv
+                i += length(Qv)
+            end
+        end
+    end
+
+    H[(1+i):(length(Qfv)+i)] .= Qfv
+    i += length(Qfv)
 end
 
 function cost(o::QuadraticObjective, z, idx)

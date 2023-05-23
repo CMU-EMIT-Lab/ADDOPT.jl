@@ -74,10 +74,6 @@ function generate_z_indices(Nkb, Nkc, Nc, Nu, Nr, Ns, Nα, Δtb, Δtc, final_con
     StatesPerCycle = Nstates * (Nkb+Nkc)
     Nstates_total = StatesPerCycle * Nc
     
-    # Nknotvals = Nstates  + Nu + NΔtb
-    # Npercycle = (Nknotvals * Nkb + 1)
-    # Nz = Npercycle * Nc #+ Nstates # Last term is for state after final cooling
-    
     InputsPerCycle = Nu * Nkb
     Nu_total = InputsPerCycle * Nc
 
@@ -90,7 +86,6 @@ function generate_z_indices(Nkb, Nkc, Nc, Nu, Nr, Ns, Nα, Δtb, Δtc, final_con
     NΔtc_total = ΔtcPerCycle * Nc
 
     Nz = Nstates_total + Nu_total + NΔtb_total + NΔtc_total
-
     
     x = [[(1:Nstates) .+ (Nstates*(k-1) +StatesPerCycle*(c-1)) for k in 1:(Nkb+Nkc)] for c in 1:Nc]
     u = [[(1:Nu) .+ (Nu*(k-1) +InputsPerCycle*(c-1) + Nstates_total) for k in 1:Nkb] for c in 1:Nc]
@@ -103,7 +98,10 @@ function generate_z_indices(Nkb, Nkc, Nc, Nu, Nr, Ns, Nα, Δtb, Δtc, final_con
 end
 
 function combined_dynamics!(f, x, u, process::Process{ID, TD, PD}) where {ID, TD, PD}
-    td, pd, id = process.transfer_dynamics, process.property_dynamics, process.input_dynamics
+    td, pd, id = process.transfer_dynamics, process.property_dynamics, process.input_dynamics    
+    # Nknotvals = Nstates  + Nu + NΔtb
+    # Npercycle = (Nknotvals * Nkb + 1)
+    # Nz = Npercycle * Nc #+ Nstates # Last term is for state after final coolingprocess.property_dynamics, process.input_dynamics
 
     s = view(x, 1:Ns(td))
     α = view(x, (Ns(td)+1):(Ns(td)+Nα(pd)))
@@ -552,7 +550,15 @@ function MOI.eval_constraint_jacobian(prob::AdditiveProblem, jac, z)
     constraint_jacobian!(prob.process, jac, z, prob.idx, prob.sparsity_cache, Δtb=prob.Δtb, Δtc=prob.Δtc, prob=prob, final_constraint=prob.final_constraint)
 end
 
-MOI.features_available(prob::AdditiveProblem) = [:Grad, :Jac]
+function MOI.hessian_lagrangian_structure(prob::AdditiveProblem)
+    return hessian_structure(prob.objective, prob.idx)
+end
+
+function MOI.eval_hessian_lagrangian(prob::AdditiveProblem, H, z, σ, μ)
+    hessian_values(prob.objective, prob.idx, H)
+end
+
+MOI.features_available(prob::AdditiveProblem) = [:Grad, :Jac, :Hess]
 MOI.initialize(prob::AdditiveProblem, features) = nothing
 MOI.jacobian_structure(prob::AdditiveProblem) = prob.constraint_jacobian_sparsity
 
