@@ -15,48 +15,70 @@ Q = Diagonal([1e-7; 1e6])
 R = Diagonal([1e-9])
 Qf = 10 * Q
 x₀ = [T∞; 0.0]
-x̄ = [T∞ + 5; 0.8]
+x̄ = [T∞ + 2; 0.8]
 ū = [0]
 objective = QuadraticObjective(Q, R, Qf, x̄, ū, 1e4)
 
 # Nx, Ny, l should be moved to the transfer process
-Nk = 1000
-problem = AdditiveProblem(process, objective, Nk, 1, x₀, x̄=x̄, Δt=0.04)
+Nk = 250
+problem = AdditiveProblem(process, objective, Nk, 3Nk, 2, x₀, x̄=x̄, Δtb=0.04, Δtc=0.04, final_constraint=false)
 
-z, X, U, Δt, tc = optimize_trajectory(problem; max_iter=10_000, c_tol=1.0e-6)
-T = [X[1][i][1] for i in 1:Nk]
-y = [X[1][i][2] for i in 1:Nk]
-P = [U[1][i][1] for i in 1:Nk]
+z, X, U, Δt = optimize_trajectory(problem; max_iter=10_000, c_tol=1.0e-6)
+Nt = length(X)
+T = [X[i][1] for i in 1:Nt]
+y = [X[i][2] for i in 1:Nt]
+P = [U[i][1] for i in 1:Nt]
 
-if isnothing(problem.Δt)
+if isnothing(problem.Δtb)
     t = cumsum([Δt[1][i] for i in 1:Nk])
 else
-    t = (1:Nk) .* problem.Δt
+    t = (1:Nt) .* problem.Δtb
 end
 
 plot(t, T, label="Temperature (K)", xlabel="Time (s)", color="orange")
 plot!(t, P ./ 10, label="Power (W)", color="purple")
 plot!(twinx(), t, y, ylabel="Phase Fraction", label=nothing)#, xlabel="Time (s)")
 
-#####
-objective = MinTimeObjective(1)
-problem = AdditiveProblem(process, objective, Nk, 1, x₀, x̄=x̄)
-tc = [0.5]
-Δt = 0.04
-z₀ = marshall_z(problem.idx, X, U, Δt, tc; free_time=true)
-@show z₀
+# #########
+# objective = MinTimeObjective(1)
+# problem = AdditiveProblem(process, objective, Nk, Nk, 1, x₀, x̄=x̄)
+# tc = [0.5]
+# Δt = 0.04
+# z₀ = marshall_z(problem.idx, X, U, Δt, tc; free_time=true)
+# @show z₀
 
-z, X, U, Δt, tc = optimize_trajectory(problem; max_iter=10_000, c_tol=1.0e-6, z₀=z₀, tol=1.0e-4)
-T = [X[1][i][1] for i in 1:Nk]
-y = [X[1][i][2] for i in 1:Nk]
-P = [U[1][i][1] for i in 1:Nk]
+# z, X, U, Δt, tc = optimize_trajectory(problem; max_iter=10_000, c_tol=1.0e-6, z₀=z₀, tol=1.0e-4)
+# T = [X[1][i][1] for i in 1:Nk]
+# y = [X[1][i][2] for i in 1:Nk]
+# P = [U[1][i][1] for i in 1:Nk]
 
-if isnothing(problem.Δt)
-    t = cumsum([Δt[1][i] for i in 1:Nk])
-else
-    t = (1:Nk) .* problem.Δt
-end
+# if isnothing(problem.Δt)
+#     t = cumsum([Δt[1][i] for i in 1:Nk])
+# else
+#     t = (1:Nk) .* problem.Δt
+# end
 
-plot(t, T, label="Temperature (K)", xlabel="Time (s)", color="orange")
-plot!(t, P ./ 10, label="Power (W)", color="purple")
-plot!(twinx(), t, y, ylabel="Phase Fraction", label=nothing)
+# plot(t, T, label="Temperature (K)", xlabel="Time (s)", color="orange")
+# plot!(t, P ./ 10, label="Power (W)", color="purple")
+# plot!(twinx(), t, y, ylabel="Phase Fraction", label=nothing)
+# objective = MinTimeObjective(1)
+# problem = AdditiveProblem(process, objective, Nk, Nk, 1, x₀, x̄=x̄)
+# tc = [0.5]
+# Δt = 0.04
+# z₀ = marshall_z(problem.idx, X, U, Δt, tc; free_time=true)
+# @show z₀
+
+# z, X, U, Δt, tc = optimize_trajectory(problem; max_iter=10_000, c_tol=1.0e-6, z₀=z₀, tol=1.0e-4)
+# T = [X[1][i][1] for i in 1:Nk]
+# y = [X[1][i][2] for i in 1:Nk]
+# P = [U[1][i][1] for i in 1:Nk]
+
+# if isnothing(problem.Δt)
+#     t = cumsum([Δt[1][i] for i in 1:Nk])
+# else
+#     t = (1:Nk) .* problem.Δt
+# end
+
+# plot(t, T, label="Temperature (K)", xlabel="Time (s)", color="orange")
+# plot!(t, P ./ 10, label="Power (W)", color="purple")
+# plot!(twinx(), t, y, ylabel="Phase Fraction", label=nothing)

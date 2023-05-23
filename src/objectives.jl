@@ -26,14 +26,14 @@ end
 
 function cost(o::QuadraticObjective, z, idx)
     Q, R, Qf, x̄, ū = o.Q, o.R, o.Qf, o.x̄, o.ū
-    Nx, Nk, Nc, Nu = idx.Nstates, idx.Nkb, idx.Nc, idx.Nu
+    Nx, Nkb, Nkc, Nc, Nu = idx.Nstates, idx.Nkb, idx.Nkc, idx.Nc, idx.Nu
 
     cost = 0.0
     ex = zeros(eltype(z), Nx)
     eu = zeros(eltype(z), Nu)
     for c in 1:Nc
 
-        for k in 1:(Nk-1)
+        for k in 1:Nkb
             xₖ = @view z[idx.x[c][k]]
             uₖ = @view z[idx.u[c][k]]
 
@@ -44,9 +44,19 @@ function cost(o::QuadraticObjective, z, idx)
             # end
             cost += 0.5 * (dot(ex, Q, ex) + dot(eu, R, eu))# * (isnothing(idx.Δt) ? 1.0 : z[idx.Δt[c][k]])
         end
+
+        for k in (Nkb+1):(Nkb+Nkc)
+            xₖ = @view z[idx.x[c][k]]
+
+            @. ex = xₖ - x̄
+
+            if (c < Nc) || (k < Nkb+Nkc)
+                cost += 0.5 * (dot(ex, Q, ex))# * (isnothing(idx.Δt) ? 1.0 : z[idx.Δt[c][k]])
+            end
+        end
     end
 
-    xₙ = @view z[idx.x[Nc][Nk]]
+    xₙ = @view z[idx.x[Nc][Nkb+Nkc]]
     @. ex = xₙ - x̄
     cost += 0.5 * dot(ex, Qf, ex)
 
@@ -56,14 +66,14 @@ end
 
 function gradient(o::QuadraticObjective, grad, z, idx)
     Q, R, Qf, x̄, ū = o.Q, o.R, o.Qf, o.x̄, o.ū
-    Nx, Nk, Nc, Nu = idx.Nstates, idx.Nkb, idx.Nc, idx.Nu
+    Nx, Nkb, Nkc, Nc, Nu = idx.Nstates, idx.Nkb, idx.Nkc, idx.Nc, idx.Nu
     grad[:] .= 0
 
     ex = zeros(eltype(z), Nx)
     eu = zeros(eltype(z), Nu)
     for c in 1:Nc
 
-        for k in 1:(Nk-1)
+        for k in 1:Nkb
             xₖ = @view z[idx.x[c][k]]
             uₖ = @view z[idx.u[c][k]]
 
@@ -78,11 +88,21 @@ function gradient(o::QuadraticObjective, grad, z, idx)
             #     view(grad, idx.u[c][k]) .*= z[idx.Δt[c][k]]
             # end
         end
+
+        for k in (Nkb+1):(Nkb+Nkc)
+            xₖ = @view z[idx.x[c][k]]
+
+            @. ex = xₖ - x̄
+
+            if (c < Nc) || (k < Nkb+Nkc)
+                mul!(view(grad, idx.x[c][k]), Q, ex)
+            end
+        end
     end
 
-    xₙ = @view z[idx.x[Nc][Nk]]
+    xₙ = @view z[idx.x[Nc][Nkb+Nkc]]
     @. ex = xₙ - x̄
-    mul!(view(grad, idx.x[Nc][Nk]), Qf, ex)
+    mul!(view(grad, idx.x[Nc][Nkb+Nkc]), Qf, ex)
 
 end
 

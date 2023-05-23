@@ -35,8 +35,9 @@ end
 Nu(id::PlanarGMAWDynamics) = 4 # vx, vz, trim, WFS (m/s for speeds)
 Nr(id::PlanarGMAWDynamics) = 4 # torch position (x,z), meltpool radius, meltpool root (z) (m)
 
-input_min(id::PlanarGMAWDynamics) = [-Inf; -Inf; 0.5; 0.0001] # vx, vz, trim, WFS (m/s for speeds)
+input_min(id::PlanarGMAWDynamics) = [-Inf; -Inf; 0.5; 0.001] # vx, vz, trim, WFS (m/s for speeds)
 input_max(id::PlanarGMAWDynamics) = [Inf; Inf; 1.2; 0.085]
+input_idle(id::PlanarGMAWDynamics) = [0.0; 0.0; 0.0; 0.0]
 
 state_min(id::PlanarGMAWDynamics) = [-Inf; -Inf; 0.0; 0.0]
 state_max(id::PlanarGMAWDynamics) = [Inf; Inf; Inf; Inf]

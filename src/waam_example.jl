@@ -43,7 +43,7 @@ objective = QuadraticObjective(Q, R, Qf, x̄, ū, 1e4)
 # Nx, Ny, l should be moved to the transfer process
 Nk = 200
 Nc = 1
-problem = AdditiveProblem(process, objective, Nk, 1, x₀, x̄=x̄, Δt=0.02)
+problem = AdditiveProblem(process, objective, Nk, Nk, 1, x₀, x̄=x̄, Δt=0.02)
 
 # z, X, U, Δt, tc = optimize_trajectory(problem; max_iter=3000, c_tol=1.0e-6)
 # T = [X[1][i][1] for i in 1:Nk]
