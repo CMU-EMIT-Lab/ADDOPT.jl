@@ -99,9 +99,6 @@ end
 
 function combined_dynamics!(f, x, u, process::Process{ID, TD, PD}) where {ID, TD, PD}
     td, pd, id = process.transfer_dynamics, process.property_dynamics, process.input_dynamics    
-    # Nknotvals = Nstates  + Nu + NΔtb
-    # Npercycle = (Nknotvals * Nkb + 1)
-    # Nz = Npercycle * Nc #+ Nstates # Last term is for state after final coolingprocess.property_dynamics, process.input_dynamics
 
     s = view(x, 1:Ns(td))
     α = view(x, (Ns(td)+1):(Ns(td)+Nα(pd)))
@@ -585,8 +582,7 @@ function optimize_trajectory(problem::AdditiveProblem;
                     z₀[idx.Δtb[c][k]] = 0.04
                 end
                 z₀[idx.x[c][k]] .= problem.x̄
-                z₀[idx.u[c][k]] .= [5000.0]
-                z₀[idx.x[c][k][1]] = 600
+                z₀[idx.u[c][k]] .= (input_min(id) .+ input_max(id))./2
             end
 
             for k in (Nkb+1):(Nkb+Nkc)
@@ -594,7 +590,6 @@ function optimize_trajectory(problem::AdditiveProblem;
                     z₀[idx.Δtc[c][k]] = 0.04
                 end
                 z₀[idx.x[c][k]] .= problem.x̄
-                z₀[idx.x[c][k][1]] = 600
             end
         end
     end
