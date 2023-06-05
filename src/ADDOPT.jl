@@ -27,7 +27,6 @@ fₖ_cache = Dict{DataType,Any}()
 fₖ₊₁_cache = Dict{DataType,Any}()
 fₘ_cache = Dict{DataType,Any}()
 xₘ_cache = Dict{DataType,Any}()
-uₘ_cache = Dict{DataType,Any}()
 ẋₘ_cache = Dict{DataType,Any}()
 
 struct AdditiveProblem{OB<:Objective, ID<:InputDynamics, TD<:TransferDynamics, PD<:PropertyDynamics} <: MOI.AbstractNLPEvaluator
@@ -114,10 +113,9 @@ function combined_dynamics!(f, x, u, process::Process{ID, TD, PD}) where {ID, TD
     dynamics_function!(id, dr, s, r, u)
 end
 
-function collocation_constraint!(process::Process{ID, TD, PD}, r::AbstractVector{T}, xₖ, uₖ, xₖ₊₁, uₖ₊₁, Δt; fₖ_cache::Dict{DataType,Any}=fₖ_cache, fₖ₊₁_cache::Dict{DataType,Any}=fₖ₊₁_cache, fₘ_cache::Dict{DataType,Any}=fₘ_cache, xₘ_cache::Dict{DataType,Any}=xₘ_cache, uₘ_cache::Dict{DataType,Any}=uₘ_cache, ẋₘ_cache::Dict{DataType,Any}=ẋₘ_cache) where {T, ID, TD, PD}
+function collocation_constraint!(process::Process{ID, TD, PD}, r::AbstractVector{T}, xₖ, uₖ, xₖ₊₁, Δt; fₖ_cache::Dict{DataType,Any}=fₖ_cache, fₖ₊₁_cache::Dict{DataType,Any}=fₖ₊₁_cache, fₘ_cache::Dict{DataType,Any}=fₘ_cache, xₘ_cache::Dict{DataType,Any}=xₘ_cache, ẋₘ_cache::Dict{DataType,Any}=ẋₘ_cache) where {T, ID, TD, PD}
     Nx = length(xₖ)
     nu = length(uₖ)
-    uₖ₊₁ = uₖ
 
     fₖ = get!(fₖ_cache, T) do
         zeros(T, Nx)
@@ -131,21 +129,17 @@ function collocation_constraint!(process::Process{ID, TD, PD}, r::AbstractVector
     xₘ = get!(xₘ_cache, T) do
         zeros(T, Nx)
     end::Vector{T}
-    uₘ = get!(uₘ_cache, T) do
-        zeros(T, nu)
-    end::Vector{T}
     ẋₘ = get!(ẋₘ_cache, T) do
         zeros(T, Nx)
     end::Vector{T}
 
     combined_dynamics!(fₖ, xₖ, uₖ, process)
-    combined_dynamics!(fₖ₊₁, xₖ₊₁, uₖ₊₁, process)
+    combined_dynamics!(fₖ₊₁, xₖ₊₁, uₖ, process)
 
     xₘ .= @. 0.5 * (xₖ + xₖ₊₁) + (Δt[1] / 8.0) * (fₖ - fₖ₊₁)
-    uₘ .= @. 0.5 * (uₖ + uₖ₊₁)
     ẋₘ .= @. (3 / (2 * Δt[1])) * (xₖ₊₁ - xₖ) - 0.25 * (fₖ + fₖ₊₁)
 
-    combined_dynamics!(fₘ, xₘ, uₘ, process)
+    combined_dynamics!(fₘ, xₘ, uₖ, process)
 
     r[:] .= fₘ .- ẋₘ
 end
@@ -167,11 +161,10 @@ function constraints!(process::Process, c, z, idx, xᵢ; xf=nothing, Δtb=nothin
             xₖ = @view z[idx.x[cyc-1][Nkb+Nkc]]
             uₖ = input_idle(process.input_dynamics)
             xₖ₊₁ = @view z[idx.x[cyc][1]]
-            uₖ₊₁ = @view z[idx.u[cyc][1]]
             r = @view c[(i+1):(i+Nx)]
             i += Nx
 
-            collocation_constraint!(process, r, xₖ, uₖ, xₖ₊₁, uₖ₊₁, Δtc)
+            collocation_constraint!(process, r, xₖ, uₖ, xₖ₊₁, Δtc)
         end
 
         for k in 1:(Nkb-1)
@@ -182,11 +175,10 @@ function constraints!(process::Process, c, z, idx, xᵢ; xf=nothing, Δtb=nothin
             xₖ = @view z[idx.x[cyc][k]]
             uₖ = @view z[idx.u[cyc][k]]
             xₖ₊₁ = @view z[idx.x[cyc][k+1]]
-            uₖ₊₁ = @view z[idx.u[cyc][k+1]]
             r = @view c[(i+1):(i+Nx)]
             i += Nx
 
-            collocation_constraint!(process, r, xₖ, uₖ, xₖ₊₁, uₖ₊₁, Δtb)
+            collocation_constraint!(process, r, xₖ, uₖ, xₖ₊₁, Δtb)
         end
 
         k = Nkb
@@ -201,7 +193,7 @@ function constraints!(process::Process, c, z, idx, xᵢ; xf=nothing, Δtb=nothin
         r = @view c[(i+1):(i+Nx)]
         i += Nx
 
-        collocation_constraint!(process, r, xₖ, uₖ, xₖ₊₁, uᵢ, Δtb)
+        collocation_constraint!(process, r, xₖ, uₖ, xₖ₊₁, Δtb)
 
         for k in (Nkb+1):(Nkb+Nkc-1)
             if free_cool_time
@@ -213,7 +205,7 @@ function constraints!(process::Process, c, z, idx, xᵢ; xf=nothing, Δtb=nothin
             r = @view c[(i+1):(i+Nx)]
             i += Nx
 
-            collocation_constraint!(process, r, xₖ, uᵢ, xₖ₊₁, uᵢ, Δtc)
+            collocation_constraint!(process, r, xₖ, uᵢ, xₖ₊₁, Δtc)
         end
 
     end
@@ -228,21 +220,19 @@ function constraint_jacobian!(process::Process, jac, z, idx, sparsity_cache; Δt
     Nc, Nkb, Nkc = idx.Nc, idx.Nkb, idx.Nkc
     Nx = idx.Nstates
     nu = idx.Nu
-    colloc_∂xₖ_sparsity, colloc_∂uₖ_sparsity, colloc_∂xₖ₊₁_sparsity, colloc_∂uₖ₊₁_sparsity, colloc_∂Δt_sparsity, colloc_∂uₖ_color, colloc_∂xₖ_color, colloc_∂xₖ₊₁_color, colloc_∂uₖ₊₁_color, colloc_∂Δt_color = sparsity_cache
+    colloc_∂xₖ_sparsity, colloc_∂uₖ_sparsity, colloc_∂xₖ₊₁_sparsity, colloc_∂Δt_sparsity, colloc_∂uₖ_color, colloc_∂xₖ_color, colloc_∂xₖ₊₁_color, colloc_∂Δt_color = sparsity_cache
     free_build_time = isnothing(Δtb)
     free_cool_time = isnothing(Δtc)
 
-    colloc_∂Δt(J, xₖ, uₖ, xₖ₊₁, uₖ₊₁, Δt) = forwarddiff_color_jacobian!(J, (r, X) -> collocation_constraint!(process, r, xₖ, uₖ, xₖ₊₁, uₖ₊₁, X), Δt, colorvec=colloc_∂Δt_color)
-    colloc_∂xₖ(J, xₖ, uₖ, xₖ₊₁, uₖ₊₁, Δt) = forwarddiff_color_jacobian!(J, (r, X) -> collocation_constraint!(process, r, X, uₖ, xₖ₊₁, uₖ₊₁, Δt), xₖ, colorvec=colloc_∂xₖ_color)
-    colloc_∂uₖ(J, xₖ, uₖ, xₖ₊₁, uₖ₊₁, Δt) = forwarddiff_color_jacobian!(J, (r, X) -> collocation_constraint!(process, r, xₖ, X, xₖ₊₁, uₖ₊₁, Δt), uₖ, colorvec=colloc_∂uₖ_color)
-    colloc_∂xₖ₊₁(J, xₖ, uₖ, xₖ₊₁, uₖ₊₁, Δt) = forwarddiff_color_jacobian!(J, (r, X) -> collocation_constraint!(process, r, xₖ, uₖ, X, uₖ₊₁, Δt), xₖ₊₁, colorvec=colloc_∂xₖ₊₁_color)
-    colloc_∂uₖ₊₁(J, xₖ, uₖ, xₖ₊₁, uₖ₊₁, Δt) = forwarddiff_color_jacobian!(J, (r, X) -> collocation_constraint!(process, r, xₖ, uₖ, xₖ₊₁, X, Δt), uₖ₊₁, colorvec=colloc_∂uₖ₊₁_color)
+    colloc_∂Δt(J, xₖ, uₖ, xₖ₊₁,  Δt) = forwarddiff_color_jacobian!(J, (r, X) -> collocation_constraint!(process, r, xₖ, uₖ, xₖ₊₁,  X), Δt, colorvec=colloc_∂Δt_color)
+    colloc_∂xₖ(J, xₖ, uₖ, xₖ₊₁,  Δt) = forwarddiff_color_jacobian!(J, (r, X) -> collocation_constraint!(process, r, X, uₖ, xₖ₊₁,  Δt), xₖ, colorvec=colloc_∂xₖ_color)
+    colloc_∂uₖ(J, xₖ, uₖ, xₖ₊₁,  Δt) = forwarddiff_color_jacobian!(J, (r, X) -> collocation_constraint!(process, r, xₖ, X, xₖ₊₁,  Δt), uₖ, colorvec=colloc_∂uₖ_color)
+    colloc_∂xₖ₊₁(J, xₖ, uₖ, xₖ₊₁,  Δt) = forwarddiff_color_jacobian!(J, (r, X) -> collocation_constraint!(process, r, xₖ, uₖ, X,  Δt), xₖ₊₁, colorvec=colloc_∂xₖ₊₁_color)
 
     i = 1
     J∂xₖ = Float64.(sparse(colloc_∂xₖ_sparsity))
     J∂uₖ = Float64.(sparse(colloc_∂uₖ_sparsity))
     J∂xₖ₊₁ = Float64.(sparse(colloc_∂xₖ₊₁_sparsity))
-    J∂uₖ₊₁ = Float64.(sparse(colloc_∂uₖ₊₁_sparsity))
     J∂Δt = Float64.(sparse(colloc_∂Δt_sparsity))
 
     for cyc in 1:Nc
@@ -254,27 +244,21 @@ function constraint_jacobian!(process::Process, jac, z, idx, sparsity_cache; Δt
             xₖ = @view z[idx.x[cyc-1][Nkb+Nkc]]
             uₖ = input_idle(process.input_dynamics)
             xₖ₊₁ = @view z[idx.x[cyc][1]]
-            uₖ₊₁ = @view z[idx.u[cyc][1]]
 
-            colloc_∂xₖ(J∂xₖ, xₖ, uₖ, xₖ₊₁, uₖ₊₁, Δtc)
+            colloc_∂xₖ(J∂xₖ, xₖ, uₖ, xₖ₊₁,  Δtc)
             _, _, vals = findnz(J∂xₖ)
             view(jac, i:(i+length(vals)-1)) .= vals
             i += length(vals)
 
             if free_cool_time
-                colloc_∂Δt(J∂Δt, xₖ, uₖ, xₖ₊₁, uₖ₊₁, Δtc)
+                colloc_∂Δt(J∂Δt, xₖ, uₖ, xₖ₊₁,  Δtc)
                 _, _, vals = findnz(J∂Δt)
                 view(jac, i:(i+length(vals)-1)) .= vals
                 i += length(vals)
             end
 
-            colloc_∂xₖ₊₁(J∂xₖ₊₁, xₖ, uₖ, xₖ₊₁, uₖ₊₁, Δtc)
+            colloc_∂xₖ₊₁(J∂xₖ₊₁, xₖ, uₖ, xₖ₊₁,  Δtc)
             _, _, vals = findnz(J∂xₖ₊₁)
-            view(jac, i:(i+length(vals)-1)) .= vals
-            i += length(vals)
-
-            colloc_∂uₖ₊₁(J∂uₖ₊₁, xₖ, uₖ, xₖ₊₁, uₖ₊₁, Δtc)
-            _, _, vals = findnz(J∂uₖ₊₁)
             view(jac, i:(i+length(vals)-1)) .= vals
             i += length(vals)
         end
@@ -286,34 +270,29 @@ function constraint_jacobian!(process::Process, jac, z, idx, sparsity_cache; Δt
             xₖ = @view z[idx.x[cyc][k]]
             uₖ = @view z[idx.u[cyc][k]]
             xₖ₊₁ = @view z[idx.x[cyc][k+1]]
-            uₖ₊₁ = @view z[idx.u[cyc][k+1]]
 
-            colloc_∂xₖ(J∂xₖ, xₖ, uₖ, xₖ₊₁, uₖ₊₁, Δtb)
+            colloc_∂xₖ(J∂xₖ, xₖ, uₖ, xₖ₊₁,  Δtb)
             _, _, vals = findnz(J∂xₖ)
             view(jac, i:(i+length(vals)-1)) .= vals
             i += length(vals)
 
-            colloc_∂uₖ(J∂uₖ, xₖ, uₖ, xₖ₊₁, uₖ₊₁, Δtb)
+            colloc_∂uₖ(J∂uₖ, xₖ, uₖ, xₖ₊₁,  Δtb)
             _, _, vals = findnz(J∂uₖ)
             view(jac, i:(i+length(vals)-1)) .= vals
             i += length(vals)
 
             if free_build_time
-                colloc_∂Δt(J∂Δt, xₖ, uₖ, xₖ₊₁, uₖ₊₁, Δtb)
+                colloc_∂Δt(J∂Δt, xₖ, uₖ, xₖ₊₁,  Δtb)
                 _, _, vals = findnz(J∂Δt)
                 view(jac, i:(i+length(vals)-1)) .= vals
                 i += length(vals)
             end
 
-            colloc_∂xₖ₊₁(J∂xₖ₊₁, xₖ, uₖ, xₖ₊₁, uₖ₊₁, Δtb)
+            colloc_∂xₖ₊₁(J∂xₖ₊₁, xₖ, uₖ, xₖ₊₁,  Δtb)
             _, _, vals = findnz(J∂xₖ₊₁)
             view(jac, i:(i+length(vals)-1)) .= vals
             i += length(vals)
 
-            colloc_∂uₖ₊₁(J∂uₖ₊₁, xₖ, uₖ, xₖ₊₁, uₖ₊₁, Δtb)
-            _, _, vals = findnz(J∂uₖ₊₁)
-            view(jac, i:(i+length(vals)-1)) .= vals
-            i += length(vals)
         end
 
         k = Nkb
@@ -325,24 +304,24 @@ function constraint_jacobian!(process::Process, jac, z, idx, sparsity_cache; Δt
         xₖ₊₁ = @view z[idx.x[cyc][k+1]]
         uᵢ = input_idle(process.input_dynamics)
 
-        colloc_∂xₖ(J∂xₖ, xₖ, uₖ, xₖ₊₁, uᵢ, Δtb)
+        colloc_∂xₖ(J∂xₖ, xₖ, uₖ, xₖ₊₁, Δtb)
         _, _, vals = findnz(J∂xₖ)
         view(jac, i:(i+length(vals)-1)) .= vals
         i += length(vals)
 
-        colloc_∂uₖ(J∂uₖ, xₖ, uₖ, xₖ₊₁, uᵢ, Δtb)
+        colloc_∂uₖ(J∂uₖ, xₖ, uₖ, xₖ₊₁, Δtb)
         _, _, vals = findnz(J∂uₖ)
         view(jac, i:(i+length(vals)-1)) .= vals
         i += length(vals)
 
         if free_build_time
-            colloc_∂Δt(J∂Δt, xₖ, uₖ, xₖ₊₁, uᵢ, Δtb)
+            colloc_∂Δt(J∂Δt, xₖ, uₖ, xₖ₊₁, Δtb)
             _, _, vals = findnz(J∂Δt)
             view(jac, i:(i+length(vals)-1)) .= vals
             i += length(vals)
         end
 
-        colloc_∂xₖ₊₁(J∂xₖ₊₁, xₖ, uₖ, xₖ₊₁, uᵢ, Δtb)
+        colloc_∂xₖ₊₁(J∂xₖ₊₁, xₖ, uₖ, xₖ₊₁, Δtb)
         _, _, vals = findnz(J∂xₖ₊₁)
         view(jac, i:(i+length(vals)-1)) .= vals
         i += length(vals)
@@ -354,19 +333,19 @@ function constraint_jacobian!(process::Process, jac, z, idx, sparsity_cache; Δt
             xₖ = @view z[idx.x[cyc][k]]
             xₖ₊₁ = @view z[idx.x[cyc][k+1]]
 
-            colloc_∂xₖ(J∂xₖ, xₖ, uᵢ, xₖ₊₁, uᵢ, Δtc)
+            colloc_∂xₖ(J∂xₖ, xₖ, uᵢ, xₖ₊₁, Δtc)
             _, _, vals = findnz(J∂xₖ)
             view(jac, i:(i+length(vals)-1)) .= vals
             i += length(vals)
 
             if free_cool_time
-                colloc_∂Δt(J∂Δt, xₖ, uᵢ, xₖ₊₁, uᵢ, Δtc)
+                colloc_∂Δt(J∂Δt, xₖ, uᵢ, xₖ₊₁, Δtc)
                 _, _, vals = findnz(J∂Δt)
                 view(jac, i:(i+length(vals)-1)) .= vals
                 i += length(vals)
             end
 
-            colloc_∂xₖ₊₁(J∂xₖ₊₁, xₖ, uᵢ, xₖ₊₁, uᵢ, Δtc)
+            colloc_∂xₖ₊₁(J∂xₖ₊₁, xₖ, uᵢ, xₖ₊₁, Δtc)
             _, _, vals = findnz(J∂xₖ₊₁)
             view(jac, i:(i+length(vals)-1)) .= vals
             i += length(vals)
@@ -401,16 +380,14 @@ function constraint_jacobian_sparsity(idx, process::Process; Δtb=nothing, Δtc=
     xd1 = 2 * ones(Symbolics.Num, Nx)
     ud1 = 3 * ones(Symbolics.Num, Nu)
     xd2 = 4 * ones(Symbolics.Num, Nx)
-    ud2 = 5 * ones(Symbolics.Num, Nu)
     Δtd = 6 * ones(Symbolics.Num, 1)
 
-    colloc_∂xₖ_sparsity = Symbolics.jacobian_sparsity((r, X) -> collocation_constraint!(process, r, X, ud1, xd2, ud2, Δtd), rd, xd1)
+    colloc_∂xₖ_sparsity = Symbolics.jacobian_sparsity((r, X) -> collocation_constraint!(process, r, X, ud1, xd2, Δtd), rd, xd1)
     display(colloc_∂xₖ_sparsity)
-    colloc_∂uₖ_sparsity = Symbolics.jacobian_sparsity((r, X) -> collocation_constraint!(process, r, xd1, X, xd2, ud2, Δtd), rd, ud1)
+    colloc_∂uₖ_sparsity = Symbolics.jacobian_sparsity((r, X) -> collocation_constraint!(process, r, xd1, X, xd2, Δtd), rd, ud1)
     display(colloc_∂uₖ_sparsity)
-    colloc_∂xₖ₊₁_sparsity = Symbolics.jacobian_sparsity((r, X) -> collocation_constraint!(process, r, xd1, ud1, X, ud2, Δtd), rd, xd2)
-    colloc_∂uₖ₊₁_sparsity = Symbolics.jacobian_sparsity((r, X) -> collocation_constraint!(process, r, xd1, ud1, xd2, X, Δtd), rd, ud2)
-    colloc_∂Δt_sparsity = Symbolics.jacobian_sparsity((r, X) -> collocation_constraint!(process, r, xd1, ud1, xd2, ud2, X), rd, Δtd)
+    colloc_∂xₖ₊₁_sparsity = Symbolics.jacobian_sparsity((r, X) -> collocation_constraint!(process, r, xd1, ud1, X, Δtd), rd, xd2)
+    colloc_∂Δt_sparsity = Symbolics.jacobian_sparsity((r, X) -> collocation_constraint!(process, r, xd1, ud1, xd2, X), rd, Δtd)
     if free_build_time || free_cool_time
         display(colloc_∂Δt_sparsity)
     end
@@ -418,7 +395,6 @@ function constraint_jacobian_sparsity(idx, process::Process; Δtb=nothing, Δtc=
     colloc_∂uₖ_color = matrix_colors(Float64.(colloc_∂uₖ_sparsity))
     colloc_∂xₖ_color = matrix_colors(Float64.(colloc_∂xₖ_sparsity))
     colloc_∂xₖ₊₁_color = matrix_colors(Float64.(colloc_∂xₖ₊₁_sparsity))
-    colloc_∂uₖ₊₁_color = matrix_colors(Float64.(colloc_∂uₖ₊₁_sparsity))
     colloc_∂Δt_color = matrix_colors(Float64.(colloc_∂Δt_sparsity))
 
     NΔtb = free_build_time ? 1 : 0
@@ -442,10 +418,6 @@ function constraint_jacobian_sparsity(idx, process::Process; Δtb=nothing, Δtc=
             append!(rows, r .+ row_offset)
             append!(cols, c .+ idx.x[cyc][1][1] .- 1)
 
-            r, c, _ = findnz(colloc_∂uₖ₊₁_sparsity)
-            append!(rows, r .+ row_offset)
-            append!(cols, c .+ idx.u[cyc][1][1] .- 1)
-
             row_offset += Nx
         end
 
@@ -467,10 +439,6 @@ function constraint_jacobian_sparsity(idx, process::Process; Δtb=nothing, Δtc=
             r, c, _ = findnz(colloc_∂xₖ₊₁_sparsity)
             append!(rows, r .+ row_offset)
             append!(cols, c .+ idx.x[cyc][k+1][1] .- 1)
-
-            r, c, _ = findnz(colloc_∂uₖ₊₁_sparsity)
-            append!(rows, r .+ row_offset)
-            append!(cols, c .+ idx.u[cyc][k+1][1] .- 1)
 
             row_offset += Nx
         end
@@ -526,7 +494,7 @@ function constraint_jacobian_sparsity(idx, process::Process; Δtb=nothing, Δtc=
 
     display(sparse(rows, cols, trues(length(cols))))
     total_structure = collect(zip(rows, cols))
-    sparsity_cache = colloc_∂xₖ_sparsity, colloc_∂uₖ_sparsity, colloc_∂xₖ₊₁_sparsity, colloc_∂uₖ₊₁_sparsity, colloc_∂Δt_sparsity, colloc_∂uₖ_color, colloc_∂xₖ_color, colloc_∂xₖ₊₁_color, colloc_∂uₖ₊₁_color, colloc_∂Δt_color
+    sparsity_cache = colloc_∂xₖ_sparsity, colloc_∂uₖ_sparsity, colloc_∂xₖ₊₁_sparsity, colloc_∂Δt_sparsity, colloc_∂uₖ_color, colloc_∂xₖ_color, colloc_∂xₖ₊₁_color, colloc_∂Δt_color
     return total_structure, sparsity_cache
 end
 
