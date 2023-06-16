@@ -1,0 +1,94 @@
+struct PlanarVoxelTemperatureDynamics <: TransferDynamics
+    nrows::Int
+    ncols::Int
+
+    l::Float64
+    xₙ::Vector{Float64}
+    zₙ::Vector{Float64}
+
+    k
+    ρ::Float64
+    cₚ::Float64
+    T∞::Float64
+
+    h∞::Float64
+
+    # B_cache::Dict{DataType,Any}
+    # C_cache::Dict{DataType,Any}
+    K_cache::Dict{DataType,Any}
+    # T_cache::Dict{DataType,Any}
+
+    function PlanarVoxelTemperatureDynamics(nrows, ncols, l, xₙ, zₙ, k, ρ, cₚ, T∞, h∞)
+        # B = Dict{DataType,Any}()
+        # C = Dict{DataType,Any}()
+        K = Dict{DataType,Any}()
+        # T = Dict{DataType,Any}()
+
+        return new(nrows, ncols, l, xₙ, zₙ, k, ρ, cₚ, T∞, h∞, K)#, B, C, K, T)
+    end
+end
+
+@inline Ns(td::PlanarVoxelTemperatureDynamics)::Int = td.nrows * td.ncols
+state_min(td::PlanarVoxelTemperatureDynamics) = 10.0 * ones(Ns(td))
+state_max(td::PlanarVoxelTemperatureDynamics) = 1400.0 * ones(Ns(td)) #Inf * ones(Ns(td))
+
+function dynamics_function!(td::PlanarVoxelTemperatureDynamics, ds::AbstractVector{Ty}, s, t) where {Ty}
+    n_rows, n_cols = td.nrows, td.ncols
+    l, xₙ, zₙ = td.l, td.xₙ, td.zₙ
+    k, ρ, cₚ, T∞ = td.k, td.ρ, td.cₚ, td.T∞
+    h∞ = td.h∞
+
+    K = get!(td.K_cache, Ty) do
+        zeros(Ty, n_rows * n_cols)
+    end::Vector{Ty}
+
+    N = Ns(td)
+    dT = ds
+    T = s
+
+    map!(k, K, T)
+
+    rcT = reshape(T, (n_cols, n_rows))
+    rcdT = reshape(dT, (n_cols, n_rows))
+    rcK = reshape(view(K, :), (n_cols, n_rows))
+
+    dT .= 0
+
+    # From top
+    dTᵢ = view(rcdT, :, 1:(n_rows-1))
+    Tᵢ = view(rcT, :, 1:(n_rows-1))
+    Tⱼ = view(rcT, :, 2:n_rows)
+    Kᵢ = view(rcK, :, 1:(n_rows-1))
+    Kⱼ = view(rcK, :, 2:n_rows)
+    dTᵢ .+= (1 / (ρ * (l^2) * cₚ)) .* ((Kᵢ .+ Kⱼ) ./ 2) .* (Tⱼ .- Tᵢ)
+
+    # From bottom
+    dTᵢ = view(rcdT, :, 2:n_rows)
+    Tᵢ = view(rcT, :, 2:n_rows)
+    Tⱼ = view(rcT, :, 1:(n_rows-1))
+    Kᵢ = view(rcK, :, 2:n_rows)
+    Kⱼ = view(rcK, :, 1:(n_rows-1))
+    dTᵢ .+= (1 / (ρ * (l^2) * cₚ)) .* ((Kᵢ .+ Kⱼ) ./ 2) .* (Tⱼ .- Tᵢ)
+
+    # From left
+    dTᵢ = view(rcdT, 2:n_cols, :)
+    Tᵢ = view(rcT, 2:n_cols, :)
+    Tⱼ = view(rcT, 1:(n_cols-1), :)
+    Kᵢ = view(rcK, 2:n_cols, :)
+    Kⱼ = view(rcK, 1:(n_cols-1), :)
+    dTᵢ .+= (1 / (ρ * (l^2) * cₚ)) .* ((Kᵢ .+ Kⱼ) ./ 2) .* (Tⱼ .- Tᵢ)
+
+    # From right
+    dTᵢ = view(rcdT, 1:(n_cols-1), :)
+    Tᵢ = view(rcT, 1:(n_cols-1), :)
+    Tⱼ = view(rcT, 2:n_cols, :)
+    Kᵢ = view(rcK, 1:(n_cols-1), :)
+    Kⱼ = view(rcK, 2:n_cols, :)
+    dTᵢ .+= (1 / (ρ * (l^2) * cₚ)) .* ((Kᵢ .+ Kⱼ) ./ 2) .* (Tⱼ .- Tᵢ)
+
+    dT .+= (h∞ / (ρ *l* cₚ)) .* (T∞ .- T) # Convection to environment
+end
+
+function temperature!(td::PlanarVoxelTemperatureDynamics, T, s)
+    T .= s
+end

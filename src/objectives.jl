@@ -94,10 +94,7 @@ function cost(o::QuadraticObjective, z, idx)
 
             @. ex = xₖ - x̄
             @. eu = uₖ - ū
-            # if !isnothing(idx.Δt)
-            #     cost += o.tw * z[idx.Δt[c][k]]
-            # end
-            cost += 0.5 * (dot(ex, Q, ex) + dot(eu, R, eu))# * (isnothing(idx.Δt) ? 1.0 : z[idx.Δt[c][k]])
+            cost += 0.5 * (dot(ex, Q, ex) + dot(eu, R, eu))
         end
 
         for k in (Nkb+1):(Nkb+Nkc)
@@ -106,7 +103,7 @@ function cost(o::QuadraticObjective, z, idx)
             @. ex = xₖ - x̄
 
             if (c < Nc) || (k < Nkb+Nkc)
-                cost += 0.5 * (dot(ex, Q, ex))# * (isnothing(idx.Δt) ? 1.0 : z[idx.Δt[c][k]])
+                cost += 0.5 * (dot(ex, Q, ex))
             end
         end
     end
@@ -137,11 +134,6 @@ function gradient(o::QuadraticObjective, grad, z, idx)
 
             mul!(view(grad, idx.x[c][k]), Q, ex)
             mul!(view(grad, idx.u[c][k]), R, eu)
-            # if !isnothing(idx.Δt)
-            #     grad[idx.Δt[c][k]] = o.tw + 0.5 * (dot(ex, Q, ex) + dot(eu, R, eu))
-            #     view(grad, idx.x[c][k]) .*= z[idx.Δt[c][k]]
-            #     view(grad, idx.u[c][k]) .*= z[idx.Δt[c][k]]
-            # end
         end
 
         for k in (Nkb+1):(Nkb+Nkc)

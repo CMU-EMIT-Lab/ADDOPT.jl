@@ -1,3 +1,5 @@
+using StatsFuns
+
 struct PlanarVoxelMassEnergyDynamics <: TransferDynamics
     nrows::Int
     ncols::Int
@@ -10,52 +12,52 @@ struct PlanarVoxelMassEnergyDynamics <: TransferDynamics
     ρ::Float64
     cₚ::Float64
     T∞::Float64
+    T₀::Float64
     wire_diam::Float64
 
     h∞::Float64
     h₀::Float64
 
-    B_cache::Dict{DataType, Any}
-    C_cache::Dict{DataType, Any}
-    K_cache::Dict{DataType, Any}
-    T_cache::Dict{DataType, Any}
+    B_cache::Dict{DataType,Any}
+    C_cache::Dict{DataType,Any}
+    K_cache::Dict{DataType,Any}
+    T_cache::Dict{DataType,Any}
 
-    function PlanarVoxelMassEnergyDynamics(nrows, ncols, l, xₙ, zₙ, k, ρ, cₚ, T∞, wire_diam, h∞, h₀)
-        B = Dict{DataType, Any}()
-        C = Dict{DataType, Any}()
-        K = Dict{DataType, Any}()
-        T = Dict{DataType, Any}()
-        
-        return new(nrows, ncols, l, xₙ, zₙ, k, ρ, cₚ, T∞, wire_diam, h∞, h₀, B, C, K, T)
+    function PlanarVoxelMassEnergyDynamics(nrows, ncols, l, xₙ, zₙ, k, ρ, cₚ, T∞, T₀, wire_diam, h∞, h₀)
+        B = Dict{DataType,Any}()
+        C = Dict{DataType,Any}()
+        K = Dict{DataType,Any}()
+        T = Dict{DataType,Any}()
+
+        return new(nrows, ncols, l, xₙ, zₙ, k, ρ, cₚ, T∞, T₀, wire_diam, h∞, h₀, B, C, K, T)
     end
 end
 
-Ns(td::PlanarVoxelMassEnergyDynamics) = td.nrows * td.ncols * 2
-state_min(td::PlanarVoxelMassEnergyDynamics) = zeros(Ns(td))
-state_max(td::PlanarVoxelMassEnergyDynamics) = Inf * ones(Ns(td))
+@inline Ns(td::PlanarVoxelMassEnergyDynamics)::Int = td.nrows * td.ncols * 2
+state_min(td::PlanarVoxelMassEnergyDynamics) = [zeros(Ns(td) ÷ 2); 1e-40 * ones(Ns(td) ÷ 2)]
+state_max(td::PlanarVoxelMassEnergyDynamics) = Inf * ones(Ns(td))#[2000 * td.cₚ * 20e-3 * td.l^2 * td.ρ * ones(Ns(td) ÷ 2); 20e-3 * td.l^2 * td.ρ * ones(Ns(td) ÷ 2)]
 
-
-function dynamics_function!(td::PlanarVoxelMassEnergyDynamics, ds::AbstractVector{Ty}, s) where Ty
+function dynamics_function!(td::PlanarVoxelMassEnergyDynamics, ds::AbstractVector{Ty}, s, t) where {Ty}
     n_rows, n_cols = td.nrows, td.ncols
     l, xₙ, zₙ = td.l, td.xₙ, td.zₙ
     k, ρ, cₚ, T∞, T₀, wire_diam = td.k, td.ρ, td.cₚ, td.T∞, td.T₀, td.wire_diam
     h∞, h₀ = td.h∞, td.h₀#, td.hₐᵣ, td.η, td.γᵣ, td.γₕ, td.wₓ, td.bₕ
     # B, C, K, T = td.B, td.C, td.K, td.T
-    
+
     B = get!(td.B_cache, Ty) do
-        zeros(Ty, n_rows*n_cols)
+        zeros(Ty, n_rows * n_cols)
     end::Vector{Ty}
     C = get!(td.C_cache, Ty) do
-        zeros(Ty, n_rows*n_cols)
+        zeros(Ty, n_rows * n_cols)
     end::Vector{Ty}
     K = get!(td.K_cache, Ty) do
-        zeros(Ty, n_rows*n_cols)
+        zeros(Ty, n_rows * n_cols)
     end::Vector{Ty}
     T = get!(td.T_cache, Ty) do
-        zeros(Ty, n_rows*n_cols)
+        zeros(Ty, n_rows * n_cols)
     end::Vector{Ty}
 
-    μ(mi, mj) = min(mi, mj) / mi
+    μ(mi, mj) = (1 / (1 / mi + 1 / mj)) / mi#min(mi, mj) / mi
 
     temperature!(td, T, s)
     map!(k, K, T)
@@ -129,7 +131,7 @@ function dynamics_function!(td::PlanarVoxelMassEnergyDynamics, ds::AbstractVecto
     # if ṁ > 0 && P > 0
     #     dE .+= (hₐᵣ / cₚ) .* C .* normpdf.((xₙ .- xₜ) ./ 0.006) .* (cₚ .* T∞ .* m .- E)
     # end # Convection from argon
-    
+
     dE .+= (h₀ / (ρ * l * cₚ)) .* B .* (cₚ .* T₀ .* m .- E) # Conduction to baseplate
 end
 
@@ -138,5 +140,10 @@ function temperature!(td::PlanarVoxelMassEnergyDynamics, T, s)
     E = view(s, 1:N)
     m = view(s, (N+1):2N)
 
-    T .= clamp.(E ./ m ./ td.cₚ, td.T∞, 3000)
+    T .= softclamp.(E ./ m ./ td.cₚ, td.T∞, 2000)
+end
+
+function softclamp(val, min, max)
+    z = 4.0 * (val - min) / (max - min) - 2.0
+    return (max - min) * logistic(z) + min
 end

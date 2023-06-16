@@ -4,11 +4,11 @@ struct UniformPowerDynamics <: InputDynamics
     cₚ::Float64
 end
 
-function dynamics_function!(id::UniformPowerDynamics, dr::AbstractVector{Ty}, s, r, u) where Ty
+function dynamics_function!(id::UniformPowerDynamics, dr::AbstractVector{Ty}, s, r, u, t) where Ty
 
 end
 
-function input_function!(id::UniformPowerDynamics, ds::AbstractVector{Ty}, r, u) where Ty
+function input_function!(id::UniformPowerDynamics, ds::AbstractVector{Ty}, r, u, t) where Ty
     ds[1] += u[1] / (id.m * id.cₚ)
 end
 

@@ -11,7 +11,7 @@ end
 state_min(td::NewtonLumpedDynamics) = [200.0]
 state_max(td::NewtonLumpedDynamics) = [td.Tₘₐₓ]
 
-function dynamics_function!(td::NewtonLumpedDynamics, ds::AbstractVector{Ty}, s) where Ty
+function dynamics_function!(td::NewtonLumpedDynamics, ds::AbstractVector{Ty}, s, t) where Ty
     T = s[1]
     ds[1] = td.h * (td.T∞ - T) / (td.m * td.cₚ)
 end

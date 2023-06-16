@@ -2,40 +2,40 @@ using ProgressMeter
 
 
 # f!(dx, x, t)
-function solve_RK4(f!, x₀, dt, min_time, max_time)
-    K = trunc(Int, (max_time - min_time) / dt)
-    N̄ = length(x₀)
-    X = zeros(N̄, K)
-    X[:, 1] = x₀
-    k₁, k₂, k₃, k₄ = zeros(N̄), zeros(N̄), zeros(N̄), zeros(N̄)
-    x₁, x₂, x₃, x₄ = zeros(N̄), zeros(N̄), zeros(N̄), zeros(N̄)
+# function solve_RK4(f!, x₀, dt, min_time, max_time)
+#     K = trunc(Int, (max_time - min_time) / dt)
+#     N̄ = length(x₀)
+#     X = zeros(N̄, K)
+#     X[:, 1] = x₀
+#     k₁, k₂, k₃, k₄ = zeros(N̄), zeros(N̄), zeros(N̄), zeros(N̄)
+#     x₁, x₂, x₃, x₄ = zeros(N̄), zeros(N̄), zeros(N̄), zeros(N̄)
 
-    try
-        @showprogress 0.5 "Simulating..." for (i, t) in enumerate(range(min_time, max_time, length=K)[1:(end-1)])
-            Xi = view(X, :, i)
+#     try
+#         @showprogress 0.5 "Simulating..." for (i, t) in enumerate(range(min_time, max_time, length=K)[1:(end-1)])
+#             Xi = view(X, :, i)
 
-            x₁ .= Xi
-            f!(k₁, x₁, t)
+#             x₁ .= Xi
+#             f!(k₁, x₁, t)
 
-            @. x₂ = Xi + k₁ * dt / 2
-            f!(k₂, x₂, t + dt / 2)
+#             @. x₂ = Xi + k₁ * dt / 2
+#             f!(k₂, x₂, t + dt / 2)
 
-            @. x₃ = Xi + k₂ * dt / 2
-            f!(k₃, x₃, t + dt / 2)
+#             @. x₃ = Xi + k₂ * dt / 2
+#             f!(k₃, x₃, t + dt / 2)
 
-            @. x₄ = Xi + k₃ * dt
-            f!(k₄, x₄, t + dt)
+#             @. x₄ = Xi + k₃ * dt
+#             f!(k₄, x₄, t + dt)
 
-            @. X[:, i+1] = Xi + (1 / 6) * (k₁ + 2k₂ + 2k₃ + k₄) * dt
-        end
-    catch e
-        println(showerror, e, catch_backtrace())
-    finally
-        return X
-    end
+#             @. X[:, i+1] = Xi + (1 / 6) * (k₁ + 2k₂ + 2k₃ + k₄) * dt
+#         end
+#     catch e
+#         println(showerror, e, catch_backtrace())
+#     finally
+#         return X
+#     end
 
-    return X
-end
+#     return X
+# end
 
 
 # f!(dx, x, u)
@@ -46,30 +46,58 @@ function solve_RK4(f!, x₀, U, dt, Nk)
     k₁, k₂, k₃, k₄ = zeros(Nx), zeros(Nx), zeros(Nx), zeros(Nx)
     x₁, x₂, x₃, x₄ = zeros(Nx), zeros(Nx), zeros(Nx), zeros(Nx)
 
-    try
-        @showprogress 0.5 "Simulating..." for i in 1:Nk
-            Xi = view(X, i)
-            Ui = view(U, i)
+    # try
+    t = 0.0
+    p = Progress(Nk - 1)
+    # @showprogress 0.5 "Simulating..." 
+    for i in 1:(Nk-1)
+        Xi = X[i]
+        Ui = U[i]
 
-            x₁ .= Xi
-            f!(k₁, x₁, Ui)
+        x₁ .= Xi
+        f!(k₁, x₁, Ui, t)
 
-            @. x₂ = Xi + k₁ * dt / 2
-            f!(k₂, x₂, Ui)
+        @. x₂ = Xi + k₁ * dt / 2
+        f!(k₂, x₂, Ui, t)
 
-            @. x₃ = Xi + k₂ * dt / 2
-            f!(k₃, x₃, Ui)
+        @. x₃ = Xi + k₂ * dt / 2
+        f!(k₃, x₃, Ui, t)
 
-            @. x₄ = Xi + k₃ * dt
-            f!(k₄, x₄, Ui)
+        @. x₄ = Xi + k₃ * dt
+        f!(k₄, x₄, Ui, t)
 
-            @. X[i+1] = Xi + (1 / 6) * (k₁ + 2k₂ + 2k₃ + k₄) * dt
-        end
-    catch e
-        println(showerror, e, catch_backtrace())
-    finally
-        return X
+        @. X[i+1] = Xi + (1 / 6) * (k₁ + 2k₂ + 2k₃ + k₄) * dt
+        next!(p)
+        t += dt
     end
+    # catch e
+    #     println(showerror, e, catch_backtrace())
+    # finally
+    #     return X
+    # end
 
     return X
+end
+
+function step_RK4(f!, Xi, u, dt, t)
+    Nx = length(Xi)
+    k₁, k₂, k₃, k₄ = zeros(Nx), zeros(Nx), zeros(Nx), zeros(Nx)
+    x₁, x₂, x₃, x₄ = zeros(Nx), zeros(Nx), zeros(Nx), zeros(Nx)
+    Xf = zeros(Nx)
+
+    x₁ .= Xi
+    f!(k₁, x₁, u, t)
+
+    @. x₂ = Xi + k₁ * dt / 2
+    f!(k₂, x₂, u, t + dt / 2)
+
+    @. x₃ = Xi + k₂ * dt / 2
+    f!(k₃, x₃, u, t + dt / 2)
+
+    @. x₄ = Xi + k₃ * dt
+    f!(k₄, x₄, u, t + dt)
+
+    @. Xf = Xi + (1 / 6) * (k₁ + 2k₂ + 2k₃ + k₄) * dt
+
+    return Xf
 end
