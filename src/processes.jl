@@ -2,7 +2,8 @@
 include("input_models/uniform_power.jl")
 include("input_models/planar_gmaw.jl")
 include("input_models/planar_gmaw_prescribed.jl")
-include("input_models/planar_heatsource.jl")
+# include("input_models/planar_heatsource.jl")
+include("input_models/planar_heatsource_relaxed.jl")
 include("input_models/planar_heatsource_prescribed.jl")
 
 # Property models
@@ -93,7 +94,7 @@ function PlanarWAAMPrescribedMotion(nrows, ncols, l, k, ρ, cₚ, T∞, T₀, T�
     return Process(id, td, pd)
 end
 
-function PlanarLPBF(nrows, ncols, l, k, ρ, cₚ, T∞, h∞, σ)
+function PlanarLPBF(nrows, ncols, l, k, ρ, cₚ, T∞, h∞, σ, Pₘₐₓ, Pₘᵢₙ)
     n_voxels = nrows * ncols
     A = 1e3
     τ = 5e3
@@ -107,7 +108,7 @@ function PlanarLPBF(nrows, ncols, l, k, ρ, cₚ, T∞, h∞, σ)
     xₙ = x[:, 1]
     zₙ = x[:, 2]
 
-    id = PlanarHeatsourceDynamics(nrows, ncols, l, xₙ, zₙ, ρ, cₚ, σ)
+    id = PlanarHeatsourceDynamics(nrows, ncols, l, xₙ, zₙ, Pₘₐₓ, Pₘᵢₙ, ρ, cₚ, σ)
     td = PlanarVoxelTemperatureDynamics(nrows, ncols, l, xₙ, zₙ, k, ρ, cₚ, T∞, h∞)
     pd = FusionDynamics(A, τ; n=n_voxels)
 
