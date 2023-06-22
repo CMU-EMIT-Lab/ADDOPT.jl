@@ -7,7 +7,7 @@ using JLD2
 A = 1e4
 τ = 9625
 
-σ = 0.8e-3#5e-4 (0.707 may be theory)
+σ = 0.8e-3 # m
 
 h∞ = 2000 # W / m^2 K
 h₀ = 7500 # W / m^2 K
@@ -53,34 +53,22 @@ Nc = 1
 Δtc = 0.01
 problem = AdditiveProblem(process, objective, Nkb, Nkc, Nc, x₀, x̄=x̄, Δtb=Δtb, Δtc=Δtc, final_constraint=false)
 
-# z₀ = generate_wall_z₀(process, problem.idx, x₀, Δtb, Δtc; free_time=false)
-# X = vcat([[z₀[problem.idx.x[c][k]] for k in 1:(Nkb+Nkc)] for c in 1:Nc]...)
-# U = vcat([[z₀[problem.idx.u[c][k]] for k in 1:Nkb] for c in 1:Nc]...)
+z, X, U, Δt = optimize_trajectory(problem; max_iter=10_000, c_tol=1.0e-6, ug=30.0 * (ones(nvox) + randn(nvox)), xg=[1100 * ones(nvox); 0.4 * ones(nvox)])
+
 # Y = [X[k][1:nvox] for k in 1:length(X)]
+# animate_state_history(X, Δtb, nrows, ncols, strid=1, path="animation_state_lpbf_optimized_gausshess_noguess_linear8varsmooth.mp4")
+# animate_measurement_history(Y, Δtb, nrows, ncols, strid=1, path="animation_measured_lpbf_optimized_gausshess_noguess_linear8varsmooth.mp4")
+# animate_measurement_history(U, Δtb, nrows, ncols, strid=1, path="animation_power_lpbf_optimized_gausshess_noguess_linear8varsmooth.mp4", quantity="Power W", scale=(0, 400))
 
-# animate_state_history(X, Δtb, nrows, ncols, strid=4, path="animation_state_lpbf.mp4")
-# animate_measurement_history(Y, Δtb, nrows, ncols, strid=4, path="animation_measured_lpbf.mp4")
+# save_object("traj_lpbf_gausshess_noguess_linear8varsmooth.jld2", z) #linear 4: 6x6, 80W max. Linear 5: 500W max. Linear 6: 500W, with variance constraint (all these with 1.2mm stdev). Linear 8: 0.8 mm stdev, increased matrix magnitude
 
-# z0 = copy(z)
-z, X, U, Δt = optimize_trajectory(problem; max_iter=10_000, c_tol=1.0e-6, ug=30.0 * (ones(nvox) + randn(nvox)), xg=[1200 * ones(nvox); 0.4 * ones(nvox)])#, z₀=z0) 1200, .4
+# xₙ = process.input_dynamics.xₙ
+# zₙ = process.input_dynamics.zₙ
 
-Y = [X[k][1:nvox] for k in 1:length(X)]
-animate_state_history(X, Δtb, nrows, ncols, strid=1, path="animation_state_lpbf_optimized_gausshess_noguess_linear8varsmooth.mp4")
-animate_measurement_history(Y, Δtb, nrows, ncols, strid=1, path="animation_measured_lpbf_optimized_gausshess_noguess_linear8varsmooth.mp4")
-animate_measurement_history(U, Δtb, nrows, ncols, strid=1, path="animation_power_lpbf_optimized_gausshess_noguess_linear8varsmooth.mp4", quantity="Power W", scale=(0, 400))
+# xt = [sum(xₙ.*U[k])/sum(U[k]) for k in 1:length(X)]
+# zt = [sum(zₙ.*U[k])/sum(U[k]) for k in 1:length(X)]
 
-save_object("traj_lpbf_gausshess_noguess_linear8varsmooth.jld2", z) #linear 4: 6x6, 80W max. Linear 5: 500W max. Linear 6: 500W, with variance constraint (all these with 1.2mm stdev). Linear 8: 0.8 mm stdev, increased matrix magnitude
+# P = [sum(U[k][:]) for k in 1:length(U)]
+# plot(P)
 
-xₙ = process.input_dynamics.xₙ
-zₙ = process.input_dynamics.zₙ
-
-xt = [sum(xₙ.*U[k])/sum(U[k]) for k in 1:length(X)]
-zt = [sum(zₙ.*U[k])/sum(U[k]) for k in 1:length(X)]
-
-P = [sum(U[k][:]) for k in 1:length(U)]
-plot(P)
-
-# vx = [U[k][1] for k in 1:length(U)]
-# vz = [U[k][2] for k in 1:length(U)]
-# P = [U[k][3] for k in 1:length(U)]
-plot(xt, zt)
+# plot(xt, zt)

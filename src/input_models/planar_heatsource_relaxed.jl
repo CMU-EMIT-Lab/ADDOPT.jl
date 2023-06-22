@@ -32,7 +32,7 @@ struct PlanarHeatsourceDynamics <: InputDynamics
         Qvx = xₙ * ones(nvox)' - ones(nvox) * xₙ' - dmax_x * ones(nvox, nvox)
         Qvz = zₙ * ones(nvox)' - ones(nvox) * zₙ' - dmax_z * ones(nvox, nvox)
 
-        return new(nrows, ncols, l, xₙ, zₙ, Pₘₐₓ, Pₘᵢₙ, σ, ρ, cₚ, 200*Qx, 200*Qz, 10*Qvx, 10*Qvz)
+        return new(nrows, ncols, l, xₙ, zₙ, Pₘₐₓ, Pₘᵢₙ, σ, ρ, cₚ, 200Qx, 200Qz, 10Qvx, 10Qvz)
     end
 end
 
@@ -69,25 +69,95 @@ function input_function!(id::PlanarHeatsourceDynamics, ds::AbstractVector{Ty}, r
     @. dT += u / (ρ * l^3 * cₚ)
 end
 
-function equality_constraint!(id::PlanarHeatsourceDynamics, c::AbstractVector{Ty}, r, u, t) where {Ty}
+function equality_constraint!(id::PlanarHeatsourceDynamics, c::AbstractVector{Ty}, u, t) where {Ty}
 
 end
 
-function inequality_constraint!(id::PlanarHeatsourceDynamics, c::AbstractVector{Ty}, r, u, t) where {Ty}
+function inequality_constraint!(id::PlanarHeatsourceDynamics, c::AbstractVector{Ty}, u, t) where {Ty}
     l, xₙ, zₙ, σ = id.l, id.xₙ, id.zₙ, id.σ
     nvox = id.nrows * id.ncols
     Qx, Qz = id.Qx, id.Qz
 
     c[1] = sum(u)
-    c[2] = dot(u, Qx, u)
-    c[3] = dot(u, Qz, u)
+    c[2] = 0.5 * dot(u, Qx, u)
+    c[3] = 0.5 * dot(u, Qz, u)
 end
 
-function inequality_constraint_interstep!(id::PlanarHeatsourceDynamics, c::AbstractVector{Ty}, rₖ, uₖ, t, rₖ₊₁, uₖ₊₁) where {Ty}
+function inequality_constraint_interstep!(id::PlanarHeatsourceDynamics, c::AbstractVector{Ty}, uₖ, t, uₖ₊₁) where {Ty}
     Qvx, Qvz = id.Qvx, id.Qvz
 
     c[1] = dot(uₖ, Qvx, uₖ₊₁)
     c[2] = dot(uₖ₊₁, Qvx, uₖ)
     c[3] = dot(uₖ, Qvz, uₖ₊₁)
     c[4] = dot(uₖ₊₁, Qvz, uₖ)
+end
+
+function col_row(col, row)
+    ret = Vector{Tuple{Int,Int}}()
+    for c in 1:col
+        for r in 1:row
+            push!(ret, (r, c))
+        end
+    end
+
+    return ret
+end
+
+function equality_constraint_hessian_structure(id::PlanarHeatsourceDynamics, i)
+    return []
+end
+
+function equality_constraint_hessian_values(id::PlanarHeatsourceDynamics, H::AbstractVector{Ty}, μ, i, j, k) where {Ty}
+    j += 1
+    return i, j
+end
+
+function inequality_constraint_hessian_structure(id::PlanarHeatsourceDynamics, i)
+    if i == 1
+        return []
+    elseif i == 2
+        return col_row(size(id.Qx)...)
+    elseif i == 3
+        return col_row(size(id.Qz)...)
+    end
+end
+
+function inequality_constraint_hessian_values(id::PlanarHeatsourceDynamics, H::AbstractVector{Ty}, μ, i, j, k) where {Ty}
+    if k == 1
+    elseif k == 2
+        Qx_val = vec(id.Qx)
+        H[i:(i+length(Qx_val)-1)] .= Qx_val .* μ[j]
+        i += length(Qx_val)
+    elseif k == 3
+        Qz_val = vec(id.Qz)
+        H[i:(i+length(Qz_val)-1)] .= Qz_val .* μ[j]
+        i += length(Qz_val)
+    end
+    j += 1
+
+    return i, j
+end
+
+function inequality_interstep_constraint_hessian_structure(id::PlanarHeatsourceDynamics, i)
+    box = col_row((i < 3 ? size(id.Qvx) : size(id.Qvz))...)
+
+    box1 = [(row, col + Nu(id)) for (row, col) in box]
+    box2 = [(row + Nu(id), col) for (row, col) in box]
+
+    return vcat(box1, box2)
+end
+
+function inequality_interstep_constraint_hessian_values(id::PlanarHeatsourceDynamics, H::AbstractVector{Ty}, μ, i, j, k) where {Ty}
+    Qvx = vec(id.Qvx)
+    Qvz = vec(id.Qvz)
+    Qv = k < 3 ? Qvx : Qvz
+    l = length(Qv)
+
+    H[i:(i+l-1)] .= Qv .* μ[j]
+    i += l
+    H[i:(i+l-1)] .= Qv .* μ[j]
+    i += l
+    j += 1
+
+    return i, j
 end

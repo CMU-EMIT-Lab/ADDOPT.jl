@@ -23,24 +23,24 @@ struct QuadraticObjective <: Objective
     ū::Vector{Float64}
 end
 
-function hessian_structure(o::QuadraticObjective, idx)
+function objective_hessian_structure(o::QuadraticObjective, idx)
     Nx, Nkb, Nkc, Nc, Nu = idx.Nstates, idx.Nkb, idx.Nkc, idx.Nc, idx.Nu
     rows = []
     cols = []
 
     for c in 1:Nc
         for k in 1:Nkb
-            append!(rows,  idx.x[c][k])
-            append!(cols,  idx.x[c][k])
+            append!(rows, idx.x[c][k])
+            append!(cols, idx.x[c][k])
 
-            append!(rows,  idx.u[c][k])
-            append!(cols,  idx.u[c][k])
+            append!(rows, idx.u[c][k])
+            append!(cols, idx.u[c][k])
         end
 
         for k in (Nkb+1):(Nkb+Nkc)
-            if (c < Nc) || (k < Nkb+Nkc)
-                append!(rows,  idx.x[c][k])
-                append!(cols,  idx.x[c][k])
+            if (c < Nc) || (k < Nkb + Nkc)
+                append!(rows, idx.x[c][k])
+                append!(cols, idx.x[c][k])
             end
         end
     end
@@ -51,7 +51,7 @@ function hessian_structure(o::QuadraticObjective, idx)
     return collect(zip(rows, cols))
 end
 
-function hessian_values(o::QuadraticObjective, idx, H)
+function objective_hessian_values(o::QuadraticObjective, idx, H)
     Nx, Nkb, Nkc, Nc, Nu = idx.Nstates, idx.Nkb, idx.Nkc, idx.Nc, idx.Nu
 
     Qv = diag(o.Q)
@@ -68,7 +68,7 @@ function hessian_values(o::QuadraticObjective, idx, H)
         end
 
         for k in (Nkb+1):(Nkb+Nkc)
-            if (c < Nc) || (k < Nkb+Nkc)
+            if (c < Nc) || (k < Nkb + Nkc)
                 H[(1+i):(length(Qv)+i)] .= Qv
                 i += length(Qv)
             end
@@ -102,7 +102,7 @@ function cost(o::QuadraticObjective, z, idx)
 
             @. ex = xₖ - x̄
 
-            if (c < Nc) || (k < Nkb+Nkc)
+            if (c < Nc) || (k < Nkb + Nkc)
                 cost += 0.5 * (dot(ex, Q, ex))
             end
         end
@@ -141,7 +141,7 @@ function gradient(o::QuadraticObjective, grad, z, idx)
 
             @. ex = xₖ - x̄
 
-            if (c < Nc) || (k < Nkb+Nkc)
+            if (c < Nc) || (k < Nkb + Nkc)
                 mul!(view(grad, idx.x[c][k]), Q, ex)
             end
         end
