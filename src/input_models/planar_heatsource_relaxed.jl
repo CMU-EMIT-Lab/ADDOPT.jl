@@ -19,68 +19,61 @@ struct PlanarHeatsourceDynamics <: InputDynamics
     Qx::Matrix{Float64}
     Qz::Matrix{Float64}
 
-    function PlanarHeatsourceDynamics(nrows, ncols, l, xₙ, zₙ, Pₘₐₓ, Pₘᵢₙ, ρ, cₚ, σ)
-        nvox = nrows*ncols
+    Qvx::Matrix{Float64}
+    Qvz::Matrix{Float64}
 
-        Qx = ones(nvox) * (xₙ.^2)' - (xₙ*xₙ') - σ^2 * ones(nvox, nvox)
-        Qz = ones(nvox) * (zₙ.^2)' - (zₙ*zₙ') - σ^2 * ones(nvox, nvox)
+    function PlanarHeatsourceDynamics(nrows, ncols, l, xₙ, zₙ, Pₘₐₓ, Pₘᵢₙ, ρ, cₚ, σ, dmax)
+        nvox = nrows * ncols
+        dmax_x = dmax_z = dmax
 
-        return new(nrows, ncols, l, xₙ, zₙ, Pₘₐₓ, Pₘᵢₙ, σ, ρ, cₚ, Qx, Qz)
+        Qx = ones(nvox) * (xₙ .^ 2)' - (xₙ * xₙ') - σ^2 * ones(nvox, nvox)
+        Qz = ones(nvox) * (zₙ .^ 2)' - (zₙ * zₙ') - σ^2 * ones(nvox, nvox)
+
+        Qvx = xₙ * ones(nvox)' - ones(nvox) * xₙ' - dmax_x * ones(nvox, nvox)
+        Qvz = zₙ * ones(nvox)' - ones(nvox) * zₙ' - dmax_z * ones(nvox, nvox)
+
+        return new(nrows, ncols, l, xₙ, zₙ, Pₘₐₓ, Pₘᵢₙ, σ, ρ, cₚ, 200*Qx, 200*Qz, 10*Qvx, 10*Qvz)
     end
 end
 
-Nu(id::PlanarHeatsourceDynamics)::Int = id.nrows * id.ncols # vx, vz, P (m/s for speeds, W for power), slacks
-Nr(id::PlanarHeatsourceDynamics)::Int = 0#2 # torch position (x,z)
+Nu(id::PlanarHeatsourceDynamics)::Int = id.nrows * id.ncols # P (W for power)
+Nr(id::PlanarHeatsourceDynamics)::Int = 0
 
-Nc_ineq(id::PlanarHeatsourceDynamics)::Int = 3#id.nrows * id.ncols + 1
-Nc_eq(id::PlanarHeatsourceDynamics)::Int = 0#1#id.nrows * id.ncols
+Nc_ineq(id::PlanarHeatsourceDynamics)::Int = 3
+Nc_eq(id::PlanarHeatsourceDynamics)::Int = 0
+Nc_ineq_inter(id::PlanarHeatsourceDynamics)::Int = 4
 
-ineq_min(id::PlanarHeatsourceDynamics) = [0.0; -Inf; -Inf]#[zeros(Nc_ineq(id))]
-ineq_max(id::PlanarHeatsourceDynamics) = [id.Pₘₐₓ; 0.0; 0.0]#Inf * ones(Nc_ineq(id))
+ineq_min(id::PlanarHeatsourceDynamics) = [id.Pₘᵢₙ; -Inf; -Inf]
+ineq_max(id::PlanarHeatsourceDynamics) = [id.Pₘₐₓ; 0.0; 0.0]
 
-input_min(id::PlanarHeatsourceDynamics) = zeros(id.nrows * id.ncols)#03; -0.03; id.Pₘᵢₙ; zeros(id.nrows * id.ncols)] # vx, vz, trim, WFS (m/s for speeds) # second gausshess constrained vx to 10 mm/s
-input_max(id::PlanarHeatsourceDynamics) = Inf * ones(id.nrows * id.ncols)#[0.03; 0.03; id.Pₘₐₓ; Inf * ones(id.nrows * id.ncols)] # fourth input is std slack
-input_idle(id::PlanarHeatsourceDynamics) = zeros(id.nrows * id.ncols)#[0.0; 0.0; 0.0; zeros(id.nrows * id.ncols)]
+ineq_inter_min(id::PlanarHeatsourceDynamics) = [-Inf; -Inf; -Inf; -Inf]
+ineq_inter_max(id::PlanarHeatsourceDynamics) = [0.0; 0.0; 0.0; 0.0]
 
-state_min(id::PlanarHeatsourceDynamics) = []#[0.0; 0.0]
-state_max(id::PlanarHeatsourceDynamics) = []#[(id.ncols + 1) * id.l; (id.nrows + 1) * id.l]
+input_min(id::PlanarHeatsourceDynamics) = zeros(id.nrows * id.ncols)
+input_max(id::PlanarHeatsourceDynamics) = Inf * ones(id.nrows * id.ncols)
+input_idle(id::PlanarHeatsourceDynamics) = zeros(id.nrows * id.ncols)
+
+state_min(id::PlanarHeatsourceDynamics) = []
+state_max(id::PlanarHeatsourceDynamics) = []
 
 function dynamics_function!(id::PlanarHeatsourceDynamics, dr::AbstractVector{Ty}, s, r, u, t) where {Ty}
-    # xₜ, zₜ = r[1], r[2]
-    # vx, vz, P = u[1], u[2], u[3]
 
-    # dr[1] = vx
-    # dr[2] = vz
 end
 
 function input_function!(id::PlanarHeatsourceDynamics, ds::AbstractVector{Ty}, r, u, t) where {Ty}
     dT = ds
-    # xₜ, zₜ = r[1], r[2]
-    # vx, vz, P = u[1], u[2], u[3]
-    # λ = @view u[4:end]
     l, xₙ, zₙ, σ = id.l, id.xₙ, id.zₙ, id.σ
     ρ, cₚ = id.ρ, id.cₚ
 
     # Forced / input dynamics
-    # @. dT += ((P * (2l^2 / (π * σ^4)) * (σ^2 - (xₙ - xₜ)^2 - (zₙ - zₜ)^2 - l^2 / 6)) + λ) / (ρ * l^3 * cₚ)  # Add in torch power
     @. dT += u / (ρ * l^3 * cₚ)
 end
 
-function equality_constraint!(id::PlanarHeatsourceDynamics, c, r, u, t)
-    # xₜ, zₜ = r[1], r[2]
-    # vx, vz, P = u[1], u[2], u[3]
-    # λ = @view u[4:end]
-    # l, xₙ, zₙ, σ = id.l, id.xₙ, id.zₙ, id.σ
+function equality_constraint!(id::PlanarHeatsourceDynamics, c::AbstractVector{Ty}, r, u, t) where {Ty}
 
-
-    # c[1] = sum(@. (P * (2l^2 / (π * σ^4)) * (σ^2 - (xₙ - xₜ)^2 - (zₙ - zₜ)^2 - l^2 / 6)) + λ) - P
-    # @. c = ((P * (2l^2 / (π * σ^4)) * (σ^2 - (xₙ - xₜ)^2 - (zₙ - zₜ)^2 - l^2 / 6)) + λ) * λ
 end
 
-function inequality_constraint!(id::PlanarHeatsourceDynamics, c, r, u, t)
-    # xₜ, zₜ = r[1], r[2]
-    # vx, vz, P = u[1], u[2], u[3]
-    # λ = @view u[4:end]
+function inequality_constraint!(id::PlanarHeatsourceDynamics, c::AbstractVector{Ty}, r, u, t) where {Ty}
     l, xₙ, zₙ, σ = id.l, id.xₙ, id.zₙ, id.σ
     nvox = id.nrows * id.ncols
     Qx, Qz = id.Qx, id.Qz
@@ -88,7 +81,13 @@ function inequality_constraint!(id::PlanarHeatsourceDynamics, c, r, u, t)
     c[1] = sum(u)
     c[2] = dot(u, Qx, u)
     c[3] = dot(u, Qz, u)
-    # @. c[1:nvox] = (P * (2l^2 / (π * σ^4)) * (σ^2 - (xₙ - xₜ)^2 - (zₙ - zₜ)^2 - l^2 / 6)) + λ
-    # c[nvox+1] = P - sum(@. (P * (2l^2 / (π * σ^4)) * (σ^2 - (xₙ - xₜ)^2 - (zₙ - zₜ)^2 - l^2 / 6)) + λ)
-    # @. c[(nvox+1):2nvox] = (P * (2l^2 / (π * σ^4)) * (σ^2 - (xₙ - xₜ)^2 - (zₙ - zₜ)^2 - l^2 / 6)) * -λ
+end
+
+function inequality_constraint_interstep!(id::PlanarHeatsourceDynamics, c::AbstractVector{Ty}, rₖ, uₖ, t, rₖ₊₁, uₖ₊₁) where {Ty}
+    Qvx, Qvz = id.Qvx, id.Qvz
+
+    c[1] = dot(uₖ, Qvx, uₖ₊₁)
+    c[2] = dot(uₖ₊₁, Qvx, uₖ)
+    c[3] = dot(uₖ, Qvz, uₖ₊₁)
+    c[4] = dot(uₖ₊₁, Qvz, uₖ)
 end
