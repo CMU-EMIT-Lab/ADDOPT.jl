@@ -50,13 +50,13 @@ function PlanarWAAMHardness(nrows, ncols, l, k, ρ, cₚ, T∞, T₀, Tₗ, wire
     zₙ = x[:, 2]
 
     id = PlanarGMAWDynamics(nrows, ncols, l, xₙ, zₙ, k, ρ, cₚ, T∞, Tₗ, wire_diam, h∞, h₀, hₐᵣ, η, γᵣ, γₕ, wₓ, bₕ)
-    td = PlanarVoxelMassEnergyDynamics(nrows, ncols, l, xₙ, zₙ, k, ρ, cₚ, T∞, T₀, wire_diam, h∞, h₀)
+    td = PlanarVoxelMassEnergyDynamics(nrows, ncols, l, w, xₙ, zₙ, kₘ, kₐ, ρₘ, ρₐ, cₚₘ, cₚₐ, T∞, T₀, wire_diam, h∞, h₀, Tmin, Tmax)
     pd = HardnessDynamics(A, τ, n=n_voxels)
 
     return Process(id, td, pd)
 end
 
-function PlanarWAAM(nrows, ncols, l, k, ρ, cₚ, T∞, T₀, Tₗ, wire_diam, h∞, h₀, hₐᵣ, η, γᵣ, γₕ, wₓ, bₕ)
+function PlanarWAAM(nrows, ncols, l, w, kₘ, kₐ, ρₘ, ρₐ, cₚₘ, cₚₐ, T∞, T₀, wire_diam, h∞, h₀, hₐᵣ, η, γᵣ, γₕ, wₓ, bₕ, Tmin, Tmax)
     n_voxels = nrows * ncols
 
     # Generate x-z matrix/vector
@@ -69,13 +69,13 @@ function PlanarWAAM(nrows, ncols, l, k, ρ, cₚ, T∞, T₀, Tₗ, wire_diam, h
     zₙ = x[:, 2]
 
     id = PlanarGMAWDynamics(nrows, ncols, l, xₙ, zₙ, k, ρ, cₚ, T∞, Tₗ, wire_diam, h∞, h₀, hₐᵣ, η, γᵣ, γₕ, wₓ, bₕ)
-    td = PlanarVoxelMassEnergyDynamics(nrows, ncols, l, xₙ, zₙ, k, ρ, cₚ, T∞, T₀, wire_diam, h∞, h₀)
+    td = PlanarVoxelMassEnergyDynamics(nrows, ncols, l, w, xₙ, zₙ, kₘ, kₐ, ρₘ, ρₐ, cₚₘ, cₚₐ, T∞, T₀, wire_diam, h∞, h₀, Tmin, Tmax)
     pd = NullPropertyDynamics()
 
     return Process(id, td, pd)
 end
 
-function PlanarWAAMPrescribedMotion(nrows, ncols, l, k, ρ, cₚ, T∞, T₀, Tₗ, wire_diam, h∞, h₀, hₐᵣ, η, γᵣ, γₕ, wₓ, bₕ, xmin, xmax, tmin, tmax)
+function PlanarWAAMPrescribedMotion(nrows, ncols, l, w, kₘ, kₐ, ρₘ, ρₐ, cₚₘ, cₚₐ, T∞, T₀, wire_diam, h∞, h₀, hₐᵣ, η, γᵣ, γₕ, wₓ, bₕ, Tmin, Tmax, xmin, xmax, tmin, tmax)
     n_voxels = nrows * ncols
 
     # Generate x-z matrix/vector
@@ -87,8 +87,8 @@ function PlanarWAAMPrescribedMotion(nrows, ncols, l, k, ρ, cₚ, T∞, T₀, T�
     xₙ = x[:, 1]
     zₙ = x[:, 2]
 
-    id = PlanarGMAWDynamicsPrescribed(nrows, ncols, l, xₙ, zₙ, k, ρ, cₚ, T∞, Tₗ, wire_diam, h∞, h₀, hₐᵣ, η, γᵣ, γₕ, wₓ, bₕ, xmin, xmax, tmin, tmax)
-    td = PlanarVoxelMassEnergyDynamics(nrows, ncols, l, xₙ, zₙ, k, ρ, cₚ, T∞, T₀, wire_diam, h∞, h₀)
+    id = PlanarGMAWDynamicsPrescribed(nrows, ncols, l, xₙ, zₙ, ρₘ, cₚₘ, T∞, 1700, wire_diam, h∞, h₀, hₐᵣ, η, γᵣ, γₕ, wₓ, bₕ, xmin, xmax, tmin, tmax)
+    td = PlanarVoxelMassEnergyDynamics(nrows, ncols, l, w, xₙ, zₙ, kₘ, kₐ, ρₘ, ρₐ, cₚₘ, cₚₐ, T∞, T₀, wire_diam, h∞, h₀, Tmin, Tmax)
     pd = NullPropertyDynamics()
 
     return Process(id, td, pd)

@@ -14,7 +14,7 @@ function animate_state_history(X, dt, n_rows, n_cols; path="animation_state.mp4"
         # y_arr = reshape(yk, (n_cols, n_rows))'
 
         hm_E = heatmap(1:n_cols, 1:n_rows, E_arr, aspect_ratio=:equal, clim=(0, 100), title="Internal Energy (J)")
-        hm_m = heatmap(1:n_cols, 1:n_rows, m_arr, aspect_ratio=:equal, clim=(0, 1), title="Mass (mg)")
+        hm_m = heatmap(1:n_cols, 1:n_rows, m_arr, aspect_ratio=:equal, clim=(0, 100), title="Mass (mg)")
         # hm_y = heatmap(1:n_cols, 1:n_rows, y_arr, aspect_ratio=:equal, clim=(0, 1.5), title="Fraction Transformed")
         # plot(hm_E, hm_m, hm_y, layout = (3, 1), size=(width, height), fmt=:png)
         plot(hm_E, hm_m, layout = (2, 1), size=(width, height), fmt=:png)

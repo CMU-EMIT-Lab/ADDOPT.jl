@@ -5,62 +5,63 @@ struct PlanarVoxelMassEnergyDynamics <: TransferDynamics
     ncols::Int
 
     l::Float64
+    w::Float64
     xₙ::Vector{Float64}
     zₙ::Vector{Float64}
 
-    k
-    ρ::Float64
-    cₚ::Float64
+    kₘ::Float64
+    kₐ::Float64
+
+    ρₘ::Float64
+    ρₐ::Float64
+
+    cₚₘ::Float64
+    cₚₐ::Float64
+
     T∞::Float64
     T₀::Float64
+
     wire_diam::Float64
 
     h∞::Float64
     h₀::Float64
+    Tmin::Float64
+    Tmax::Float64
 
-    B_cache::Dict{DataType,Any}
     C_cache::Dict{DataType,Any}
     K_cache::Dict{DataType,Any}
-    T_cache::Dict{DataType,Any}
 
-    function PlanarVoxelMassEnergyDynamics(nrows, ncols, l, xₙ, zₙ, k, ρ, cₚ, T∞, T₀, wire_diam, h∞, h₀)
-        B = Dict{DataType,Any}()
+    A::Vector{Float64}
+    B::Vector{Float64}
+
+    function PlanarVoxelMassEnergyDynamics(nrows, ncols, l, w, xₙ, zₙ, kₘ, kₐ, ρₘ, ρₐ, cₚₘ, cₚₐ, T∞, T₀, wire_diam, h∞, h₀, Tmin, Tmax)
         C = Dict{DataType,Any}()
         K = Dict{DataType,Any}()
-        T = Dict{DataType,Any}()
 
-        return new(nrows, ncols, l, xₙ, zₙ, k, ρ, cₚ, T∞, T₀, wire_diam, h∞, h₀, B, C, K, T)
+        A = 2l^2 * ones(nrows * ncols)
+        B = vcat(l * w * ones(ncols), zeros((nrows - 1) * ncols))
+
+        return new(nrows, ncols, l, w, xₙ, zₙ, kₘ, kₐ, ρₘ, ρₐ, cₚₘ, cₚₐ, T∞, T₀, wire_diam, h∞, h₀, Tmin, Tmax, C, K, A, B)
     end
 end
 
 @inline Ns(td::PlanarVoxelMassEnergyDynamics)::Int = td.nrows * td.ncols * 2
-state_min(td::PlanarVoxelMassEnergyDynamics) = [zeros(Ns(td) ÷ 2); 1e-40 * ones(Ns(td) ÷ 2)]
-state_max(td::PlanarVoxelMassEnergyDynamics) = Inf * ones(Ns(td))#[2000 * td.cₚ * 20e-3 * td.l^2 * td.ρ * ones(Ns(td) ÷ 2); 20e-3 * td.l^2 * td.ρ * ones(Ns(td) ÷ 2)]
+state_min(td::PlanarVoxelMassEnergyDynamics) = [td.l^2 * td.w * td.ρₐ * td.cₚₐ * td.Tmin * ones(Ns(td) ÷ 2); td.l^2 * td.w * td.ρₐ * ones(Ns(td) ÷ 2)]
+state_max(td::PlanarVoxelMassEnergyDynamics) = [td.l^2 * td.w * td.ρₘ * td.cₚₘ * td.Tmax * ones(Ns(td) ÷ 2); td.l^2 * td.w * td.ρₘ * ones(Ns(td) ÷ 2)]
 
 function dynamics_function!(td::PlanarVoxelMassEnergyDynamics, ds::AbstractVector{Ty}, s, t) where {Ty}
-    n_rows, n_cols = td.nrows, td.ncols
-    l, xₙ, zₙ = td.l, td.xₙ, td.zₙ
-    k, ρ, cₚ, T∞, T₀, wire_diam = td.k, td.ρ, td.cₚ, td.T∞, td.T₀, td.wire_diam
-    h∞, h₀ = td.h∞, td.h₀#, td.hₐᵣ, td.η, td.γᵣ, td.γₕ, td.wₓ, td.bₕ
-    # B, C, K, T = td.B, td.C, td.K, td.T
+    nrows, ncols = td.nrows, td.ncols
+    l, w = td.l, td.w
+    h∞, h₀ = td.h∞, td.h₀
+    T∞, T₀ = td.T∞, td.T₀
+    A, B = td.A, td.B
 
-    B = get!(td.B_cache, Ty) do
-        zeros(Ty, n_rows * n_cols)
-    end::Vector{Ty}
     C = get!(td.C_cache, Ty) do
-        zeros(Ty, n_rows * n_cols)
+        zeros(Ty, nrows * ncols)
     end::Vector{Ty}
     K = get!(td.K_cache, Ty) do
-        zeros(Ty, n_rows * n_cols)
+        zeros(Ty, nrows * ncols)
     end::Vector{Ty}
-    T = get!(td.T_cache, Ty) do
-        zeros(Ty, n_rows * n_cols)
-    end::Vector{Ty}
-
-    μ(mi, mj) = (1 / (1 / mi + 1 / mj)) / mi#min(mi, mj) / mi
-
-    temperature!(td, T, s)
-    map!(k, K, T)
 
     N = Ns(td) ÷ 2
     dE = view(ds, 1:N)
@@ -68,82 +69,73 @@ function dynamics_function!(td::PlanarVoxelMassEnergyDynamics, ds::AbstractVecto
     E = view(s, 1:N)
     m = view(s, (N+1):2N)
 
-    rcE = reshape(E, (n_cols, n_rows))
-    rcm = reshape(m, (n_cols, n_rows))
-    rcdE = reshape(dE, (n_cols, n_rows))
-    rcC = reshape(view(C, :), (n_cols, n_rows))
-    rcK = reshape(view(K, :), (n_cols, n_rows))
+    map!((x) -> conductivity(td, x), K, m)
+    map!((x) -> heat_capacity(td, x), C, m)
 
-    dm .= 0
-    dE .= 0
-    @. C = 4 / (ρ * l) + l^2 / m * (1 - exp(-m / (ρ * l^2) * 2000))
+    rcE = reshape(E, (ncols, nrows))
+    rcdE = reshape(dE, (ncols, nrows))
+    rcC = reshape(view(C, :), (ncols, nrows))
+    rcK = reshape(view(K, :), (ncols, nrows))
+
+    dm .= 0.
+    dE .= 0.
 
     # From top
-    dEᵢ = view(rcdE, :, 1:(n_rows-1))
-    Eᵢ = view(rcE, :, 1:(n_rows-1))
-    Eⱼ = view(rcE, :, 2:n_rows)
-    mᵢ = view(rcm, :, 1:(n_rows-1))
-    mⱼ = view(rcm, :, 2:n_rows)
-    Cᵢ = view(rcC, :, 1:(n_rows-1))
-    Kᵢ = view(rcK, :, 1:(n_rows-1))
-    Kⱼ = view(rcK, :, 2:n_rows)
-    dEᵢ .+= (1 / (ρ * (l^2) * cₚ)) .* ((Kᵢ .+ Kⱼ) ./ 2) .* (μ.(mⱼ, mᵢ) .* Eⱼ .- μ.(mᵢ, mⱼ) .* Eᵢ)
-    Cᵢ .-= μ.(mᵢ, mⱼ) ./ (ρ * l)
+    dEᵢ = view(rcdE, :, 1:(nrows-1))
+    Eᵢ = view(rcE, :, 1:(nrows-1))
+    Eⱼ = view(rcE, :, 2:nrows)
+    Cᵢ = view(rcC, :, 1:(nrows-1))
+    Cⱼ = view(rcC, :, 2:nrows)
+    Kᵢ = view(rcK, :, 1:(nrows-1))
+    Kⱼ = view(rcK, :, 2:nrows)
+    dEᵢ .+= 2w .* (Kᵢ .* Kⱼ) ./ (Kᵢ .+ Kⱼ) .* (Eⱼ ./ Cⱼ .- Eᵢ ./ Cᵢ)
 
     # From bottom
-    dEᵢ = view(rcdE, :, 2:n_rows)
-    Eᵢ = view(rcE, :, 2:n_rows)
-    Eⱼ = view(rcE, :, 1:(n_rows-1))
-    mᵢ = view(rcm, :, 2:n_rows)
-    mⱼ = view(rcm, :, 1:(n_rows-1))
-    Cᵢ = view(rcC, :, 2:n_rows)
-    Kᵢ = view(rcK, :, 2:n_rows)
-    Kⱼ = view(rcK, :, 1:(n_rows-1))
-    dEᵢ .+= (1 / (ρ * (l^2) * cₚ)) .* ((Kᵢ .+ Kⱼ) ./ 2) .* (μ.(mⱼ, mᵢ) .* Eⱼ .- μ.(mᵢ, mⱼ) .* Eᵢ)
-    Cᵢ .-= μ.(mᵢ, mⱼ) ./ (ρ * l)
+    dEᵢ = view(rcdE, :, 2:nrows)
+    Eᵢ = view(rcE, :, 2:nrows)
+    Eⱼ = view(rcE, :, 1:(nrows-1))
+    Cᵢ = view(rcC, :, 2:nrows)
+    Cⱼ = view(rcC, :, 1:(nrows-1))
+    Kᵢ = view(rcK, :, 2:nrows)
+    Kⱼ = view(rcK, :, 1:(nrows-1))
+    dEᵢ .+= 2w .* (Kᵢ .* Kⱼ) ./ (Kᵢ .+ Kⱼ) .* (Eⱼ ./ Cⱼ .- Eᵢ ./ Cᵢ)
 
     # From left
-    dEᵢ = view(rcdE, 2:n_cols, :)
-    Eᵢ = view(rcE, 2:n_cols, :)
-    Eⱼ = view(rcE, 1:(n_cols-1), :)
-    mᵢ = view(rcm, 2:n_cols, :)
-    mⱼ = view(rcm, 1:(n_cols-1), :)
-    Cᵢ = view(rcC, 2:n_cols, :)
-    Kᵢ = view(rcK, 2:n_cols, :)
-    Kⱼ = view(rcK, 1:(n_cols-1), :)
-    dEᵢ .+= (1 / (ρ * (l^2) * cₚ)) .* ((Kᵢ .+ Kⱼ) ./ 2) .* (μ.(mⱼ, mᵢ) .* Eⱼ .- μ.(mᵢ, mⱼ) .* Eᵢ)
-    Cᵢ .-= μ.(mᵢ, mⱼ) ./ (ρ * l)
+    dEᵢ = view(rcdE, 2:ncols, :)
+    Eᵢ = view(rcE, 2:ncols, :)
+    Eⱼ = view(rcE, 1:(ncols-1), :)
+    Cᵢ = view(rcC, 2:ncols, :)
+    Cⱼ = view(rcC, 1:(ncols-1), :)
+    Kᵢ = view(rcK, 2:ncols, :)
+    Kⱼ = view(rcK, 1:(ncols-1), :)
+    dEᵢ .+= 2w .* (Kᵢ .* Kⱼ) ./ (Kᵢ .+ Kⱼ) .* (Eⱼ ./ Cⱼ .- Eᵢ ./ Cᵢ)
 
     # From right
-    dEᵢ = view(rcdE, 1:(n_cols-1), :)
-    Eᵢ = view(rcE, 1:(n_cols-1), :)
-    Eⱼ = view(rcE, 2:n_cols, :)
-    mᵢ = view(rcm, 1:(n_cols-1), :)
-    mⱼ = view(rcm, 2:n_cols, :)
-    Cᵢ = view(rcC, 1:(n_cols-1), :)
-    Kᵢ = view(rcK, 1:(n_cols-1), :)
-    Kⱼ = view(rcK, 2:n_cols, :)
-    dEᵢ .+= (1 / (ρ * (l^2) * cₚ)) .* ((Kᵢ .+ Kⱼ) ./ 2) .* (μ.(mⱼ, mᵢ) .* Eⱼ .- μ.(mᵢ, mⱼ) .* Eᵢ)
-    Cᵢ .-= μ.(mᵢ, mⱼ) ./ (ρ * l)
+    dEᵢ = view(rcdE, 1:(ncols-1), :)
+    Eᵢ = view(rcE, 1:(ncols-1), :)
+    Eⱼ = view(rcE, 2:ncols, :)
+    Cᵢ = view(rcC, 1:(ncols-1), :)
+    Cⱼ = view(rcC, 2:ncols, :)
+    Kᵢ = view(rcK, 1:(ncols-1), :)
+    Kⱼ = view(rcK, 2:ncols, :)
+    dEᵢ .+= 2w .* (Kᵢ .* Kⱼ) ./ (Kᵢ .+ Kⱼ) .* (Eⱼ ./ Cⱼ .- Eᵢ ./ Cᵢ)
 
-    dE .+= (h∞ / cₚ) .* C .* (cₚ .* T∞ .* m .- E) # Convection to environment
+    dE .+= h∞ .* A .* (T∞ .- E ./ C) # Convection to environment
+    dE .+= h₀ .* B .* (T₀ .- E ./ C) # Conduction to baseplate
 
     # if ṁ > 0 && P > 0
     #     dE .+= (hₐᵣ / cₚ) .* C .* normpdf.((xₙ .- xₜ) ./ 0.006) .* (cₚ .* T∞ .* m .- E)
     # end # Convection from argon
-
-    dE .+= (h₀ / (ρ * l * cₚ)) .* B .* (cₚ .* T₀ .* m .- E) # Conduction to baseplate
 end
 
 function temperature!(td::PlanarVoxelMassEnergyDynamics, T, s)
     N = Ns(td) ÷ 2
     E = view(s, 1:N)
     m = view(s, (N+1):2N)
+    hc(x) = heat_capacity(td, x)
 
-    T .= softclamp.(E ./ m ./ td.cₚ, td.T∞, 2000)
+    T .= E ./ hc.(m)
 end
 
-function softclamp(val, min, max)
-    z = 4.0 * (val - min) / (max - min) - 2.0
-    return (max - min) * logistic(z) + min
-end
+conductivity(td::PlanarVoxelMassEnergyDynamics, m) = (td.kₘ - td.kₐ) * (m / (td.l^2 * td.w) - td.ρₐ) / (td.ρₘ - td.ρₐ) + td.kₐ
+heat_capacity(td::PlanarVoxelMassEnergyDynamics, m) = ((td.ρₘ * td.cₚₘ - td.ρₐ * td.cₚₐ) * (m / (td.l^2 * td.w) - td.ρₐ) / (td.ρₘ - td.ρₐ) + td.ρₐ * td.cₚₐ) * td.l^2 * td.w

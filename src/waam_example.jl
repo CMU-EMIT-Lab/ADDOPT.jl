@@ -1,6 +1,6 @@
 include("ADDOPT.jl")
 using LinearAlgebra
-using .ADDOPT: PlanarWAAMHardness, AdditiveProblem, QuadraticObjective, optimize_trajectory, generate_wall_z₀, animate_state_history, input_idle, PlanarGMAWDynamics, animate_measurement_history, constraints!, PlanarWAAM, PlanarWAAMPrescribedMotion
+using .ADDOPT: PlanarWAAMHardness, AdditiveProblem, QuadraticObjective, optimize_trajectory, generate_wall_z₀, animate_state_history, input_idle, PlanarGMAWDynamics, animate_measurement_history, constraints!, PlanarWAAM, PlanarWAAMPrescribedMotion, state_min, property_min, temperature!
 using Plots
 
 A = 1e4
@@ -13,13 +13,20 @@ wₓ = 2.5
 
 σ = 5.670374419 * 10^(-8) # Stefan-Boltzmann, W / (m⁴⋅ K⁴)
 
-h∞ = 500#10 # W / m^2 K
-h₀ = 15000#7500 # W / m^2 K
+h∞ = 10 # W / m^2 K
+h₀ = 7500 # W / m^2 K
 hₐᵣ = 500
-η = 0.8#0.95
-k(T) = 34 # W / mK ############# TEMPORARY
-ρ = 7826.0e6 # kg / m^3 # mg
-cₚ = 502.416e-6 # J / kg K # mg 
+η = 0.95
+
+kₘ = 34 # W / mK
+kₐ = 4.6e-2 # W / mK
+
+ρₘ = 7826.0e6 # kg / m^3 # mg
+ρₐ = 1.293e6 # kg / m^3 # mg
+
+cₚₘ = 502.416e-6 # J / kg K # mg 
+cₚₐ = 400e-6#717.0e-6 # J / kg K # mg 
+
 T∞ = 295.0 # K
 T₀ = 295.0 # K
 wire_diam = 0.001143 # m, aka 0.045in
@@ -28,27 +35,32 @@ Tₗ = 1784.0 # K, liquidus
 nrows = 2
 ncols = 16
 nvox = nrows * ncols
+
+Tmin = T₀
+Tmax = 1900 # K
+
 l = 0.001 # m, aka 1mm
+w = 0.010 # m, aka 10mm
 
 # process = PlanarWAAMHardness(nrows, ncols, l, k, ρ, cₚ, T∞, T₀, Tₗ, wire_diam, h∞, h₀, hₐᵣ, η, γᵣ, γₕ, wₓ, bₕ, A, τ)
 # process = PlanarWAAM(nrows, ncols, l, k, ρ, cₚ, T∞, T₀, Tₗ, wire_diam, h∞, h₀, hₐᵣ, η, γᵣ, γₕ, wₓ, bₕ)
-process = PlanarWAAMPrescribedMotion(nrows, ncols, l, k, ρ, cₚ, T∞, T₀, Tₗ, wire_diam, h∞, h₀, hₐᵣ, η, γᵣ, γₕ, wₓ, bₕ, l, l*(ncols-1), 0.0, 1.8)
+process = PlanarWAAMPrescribedMotion(nrows, ncols, l, w, kₘ, kₐ, ρₘ, ρₐ, cₚₘ, cₚₐ, T∞, T₀, wire_diam, h∞, h₀, hₐᵣ, η, γᵣ, γₕ, wₓ, bₕ, Tmin, Tmax, l, l * (ncols - 1), 0.0, 1.8)
 
 
 # Q = Diagonal([1e-4 * ones(nvox); 1e-3 * ones(nvox); 1e0 * ones(nvox); 1e-2 * ones(4)]) #1e4 mass in kg
 # Q = Diagonal([1e-4 * ones(nvox); 1e-3 * ones(nvox); 1e-2 * ones(4)]) #1e4 mass in kg
-Q = Diagonal([1e-4 * ones(nvox); 1e-2 * ones(nvox); 1e-2 * ones(1)]) #1e4 mass in kg
+Q = Diagonal([1e-5 * ones(nvox); 1e-2 * ones(nvox); 1e-2 * ones(1)]) #1e4 mass in kg
 # R = Diagonal(1e-2 * ones(4))
 R = Diagonal(1e-2 * ones(1))
 Qf = 10 * Q #cₚ * T∞ * 1e-40 * ones(nvox)
 # x₀ = [zeros(nvox); 1e-40 * ones(nvox); zeros(nvox); 0.001; 0.0; l; l]
 # x₀ = [zeros(nvox); 1e-40 * ones(nvox); 0.001; 0.0; l; l]
-x₀ = [zeros(nvox); 1e-40 * ones(nvox); l]
+x₀ = [state_min(process.transfer_dynamics); property_min(process.property_dynamics); state_min(process.input_dynamics)]
 # x̄ = [(0.005 * l^2 * ρ) * cₚ * T∞ * ones(nvox); (0.005 * l^2 * ρ) * ones(nvox); 0.4 * ones(nvox); l*ncols; l*nrows; l; l]
 # x̄ = [(0.005 * l^2 * ρ) * cₚ * T∞ * ones(nvox); (0.005 * l^2 * ρ) * ones(nvox); l*ncols; l*nrows; l; l]
-x̄ = [(0.005 * l^2 * ρ) * cₚ * T∞ * ones(nvox); (0.005 * l^2 * ρ) * ones(nvox); l]
+x̄ = [(0.008 * l^2 * ρₘ * cₚₘ + 0.002 * l^2 * ρₐ * cₚₐ) * T∞ * ones(nvox); (0.008 * l^2 * ρₘ + 0.002 * l^2 * ρₐ) * ones(nvox); l]
 # ū = [0.0; 0.0; 1.0; 0.0059]
-ū = [0.0059]
+ū = [0.0]
 objective = QuadraticObjective(Q, R, Qf, x̄, ū)
 
 # Nx, Ny, l should be moved to the transfer process
@@ -59,33 +71,33 @@ Nc = 1
 Δtc = 0.01
 problem = AdditiveProblem(process, objective, Nkb, Nkc, Nc, x₀, x̄=x̄, Δtb=Δtb, Δtc=Δtc, final_constraint=false)
 
-z₀ = generate_wall_z₀(process, problem.idx, x₀, Δtb, Δtc; free_time=false)
-X = vcat([[z₀[problem.idx.x[c][k]] for k in 1:(Nkb+Nkc)] for c in 1:Nc]...)
-U = vcat([[z₀[problem.idx.u[c][k]] for k in 1:Nkb] for c in 1:Nc]...)
-# xt = [X[k][end-3] for k in 1:length(X)]
-# zt = [X[k][end-2] for k in 1:length(X)]
-# rₘₚ = [X[k][end-1] for k in 1:length(X)]
-# zₘₚ = [X[k][end] for k in 1:length(X)]
+# z₀ = generate_wall_z₀(process, problem.idx, x₀, Δtb, Δtc; free_time=false)
+# X = vcat([[z₀[problem.idx.x[c][k]] for k in 1:(Nkb+Nkc)] for c in 1:Nc]...)
+# U = vcat([[z₀[problem.idx.u[c][k]] for k in 1:Nkb] for c in 1:Nc]...)
+# # xt = [X[k][end-3] for k in 1:length(X)]
+# # zt = [X[k][end-2] for k in 1:length(X)]
+# # rₘₚ = [X[k][end-1] for k in 1:length(X)]
+# # zₘₚ = [X[k][end] for k in 1:length(X)]
 
-# vx = [U[k][1] for k in 1:length(U)]
-# vz = [U[k][2] for k in 1:length(U)]
-# trim = [U[k][3] for k in 1:length(U)]
-# WFS = [U[k][4] for k in 1:length(U)]
+# # vx = [U[k][1] for k in 1:length(U)]
+# # vz = [U[k][2] for k in 1:length(U)]
+# # trim = [U[k][3] for k in 1:length(U)]
+# # WFS = [U[k][4] for k in 1:length(U)]
 
 
-animate_state_history(X, Δtb, nrows, ncols, strid=4, path="animation_state_prmot.mp4")
+# animate_state_history(X, Δtb, nrows, ncols, strid=4, path="animation_state_prmot.mp4")
 
-function temperature(X, N)
-    Eₛᵢₘ = @view X[1:N]
-    mₛᵢₘ = @view X[(N+1):2N]
+# function temperature(X, N)
+#     s = @view X[1:2N]
+#     T = zeros(N)
 
-    T = @. Eₛᵢₘ / cₚ / mₛᵢₘ * (1 - exp(-mₛᵢₘ / (ρ * l^2) * 2000)) + T∞ * exp(-mₛᵢₘ / (ρ * l^2) * 2000)
-    return T
-end
+#     temperature!(process.transfer_dynamics, T, s)
+#     return T
+# end
 
-Y = [temperature(X[k], nvox) for k in 1:length(X)]
+# Y = [temperature(X[k], nvox) for k in 1:length(X)]
 
-animate_measurement_history(Y, Δtb, nrows, ncols, strid=4, path="animation_measured_prmot.mp4")
+# animate_measurement_history(Y, Δtb, nrows, ncols, strid=4, path="animation_measured_prmot.mp4")
 
 # plot()
 # plot!(xt, label="Torch X")
@@ -97,50 +109,50 @@ animate_measurement_history(Y, Δtb, nrows, ncols, strid=4, path="animation_meas
 # plot!(trim, label="Trim")
 # plot!(WFS, label="WFS")
 
-prob = problem;
-c = zeros(prob.idx.Nconstr)
-constraints!(prob.process, c, z₀, prob.idx, prob.x₀, xf=prob.x̄, Δtb=prob.Δtb, Δtc=prob.Δtc, final_constraint=prob.final_constraint)
-@show c[argmax(c)]
-@show argmax(c)
-z, X, U, Δt = optimize_trajectory(problem; max_iter=400, c_tol=1.0e-6, z₀=z₀)#3000
+# prob = problem;
+# c = zeros(prob.idx.Nconstr)
+# constraints!(prob.process, c, z₀, prob.idx, prob.x₀, xf=prob.x̄, Δtb=prob.Δtb, Δtc=prob.Δtc, final_constraint=prob.final_constraint)
+# @show c[argmax(c)]
+# @show argmax(c)
+z, X, U, Δt = optimize_trajectory(problem; max_iter=10_000, c_tol=1.0e-6, xg=x₀, ug=[0.0677])
 
 animate_state_history(X, Δtb, nrows, ncols, strid=4, path="animation_state_prmot_optimized_nohess.mp4")
 Y = [temperature(X[k], nvox) for k in 1:length(X)]
 animate_measurement_history(Y, Δtb, nrows, ncols, strid=4, path="animation_measured_prmot_optimized_nohess.mp4")
 
-E = [X[k][30 + 0*nvox] for k in 1:lastindex(X)]
-m = [X[k][30 + 1*nvox] for k in 1:lastindex(X)]
-# y = [X[k][30 + 2*nvox] for k in 1:lastindex(X)]
-plot()
-plot!(E, label="E")
-plot!(m, label="m")
-# plot!(y.*100, label="y")
+# E = [X[k][30 + 0*nvox] for k in 1:lastindex(X)]
+# m = [X[k][30 + 1*nvox] for k in 1:lastindex(X)]
+# # y = [X[k][30 + 2*nvox] for k in 1:lastindex(X)]
+# plot()
+# plot!(E, label="E")
+# plot!(m, label="m")
+# # plot!(y.*100, label="y")
 
-xt = [X[k][end-3] for k in 1:length(X)]
-zt = [X[k][end-2] for k in 1:length(X)]
-rₘₚ = [X[k][end-1] for k in 1:length(X)]
-zₘₚ = [X[k][end] for k in 1:length(X)]
+# xt = [X[k][end-3] for k in 1:length(X)]
+# zt = [X[k][end-2] for k in 1:length(X)]
+# rₘₚ = [X[k][end-1] for k in 1:length(X)]
+# zₘₚ = [X[k][end] for k in 1:length(X)]
 
-vx = [U[k][1] for k in 1:length(U)]
-vz = [U[k][2] for k in 1:length(U)]
-trim = [U[k][3] for k in 1:length(U)]
-WFS = [U[k][4] for k in 1:length(U)]
+# vx = [U[k][1] for k in 1:length(U)]
+# vz = [U[k][2] for k in 1:length(U)]
+# trim = [U[k][3] for k in 1:length(U)]
+# WFS = [U[k][4] for k in 1:length(U)]
 
-plot()
-plot!(xt, label="Torch X")
-plot!(zt, label="Torch Z")
-plot!(rₘₚ, label="Radius")
-plot!(zₘₚ, label="Root")
-# T = [X[1][i][1] for i in 1:Nk]
-# y = [X[1][i][2] for i in 1:Nk]
-# P = [U[1][i][1] for i in 1:Nk]
+# plot()
+# plot!(xt, label="Torch X")
+# plot!(zt, label="Torch Z")
+# plot!(rₘₚ, label="Radius")
+# plot!(zₘₚ, label="Root")
+# # T = [X[1][i][1] for i in 1:Nk]
+# # y = [X[1][i][2] for i in 1:Nk]
+# # P = [U[1][i][1] for i in 1:Nk]
 
-# if isnothing(problem.Δt)
-#     t = cumsum([Δt[1][i] for i in 1:Nk])
-# else
-#     t = (1:Nk) .* problem.Δt
-# end
+# # if isnothing(problem.Δt)
+# #     t = cumsum([Δt[1][i] for i in 1:Nk])
+# # else
+# #     t = (1:Nk) .* problem.Δt
+# # end
 
-# plot(t, T, label="Temperature (K)", xlabel="Time (s)", color="orange")
-# plot!(t, P ./ 10, label="Power (W)", color="purple")
-# plot!(twinx(), t, y, ylabel="Phase Fraction", label=nothing)#, xlabel="Time (s)")
+# # plot(t, T, label="Temperature (K)", xlabel="Time (s)", color="orange")
+# # plot!(t, P ./ 10, label="Power (W)", color="purple")
+# # plot!(twinx(), t, y, ylabel="Phase Fraction", label=nothing)#, xlabel="Time (s)")

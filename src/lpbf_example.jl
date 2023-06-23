@@ -56,11 +56,11 @@ problem = AdditiveProblem(process, objective, Nkb, Nkc, Nc, x₀, x̄=x̄, Δtb=
 z, X, U, Δt = optimize_trajectory(problem; max_iter=10_000, c_tol=1.0e-6, ug=30.0 * (ones(nvox) + randn(nvox)), xg=[1200 * ones(nvox); 0.4 * ones(nvox)])
 
 Y = [X[k][1:nvox] for k in 1:length(X)]
-animate_state_history(X, Δtb, nrows, ncols, strid=1, path="animation_state_lpbf_optimized_partialhess_noguess_linear9varsmooth.mp4")
-animate_measurement_history(Y, Δtb, nrows, ncols, strid=1, path="animation_measured_lpbf_optimized_partialhess_noguess_linear9varsmooth.mp4")
-animate_measurement_history(U, Δtb, nrows, ncols, strid=1, path="animation_power_lpbf_optimized_partialhess_noguess_linear9varsmooth.mp4", quantity="Power W", scale=(0, 400))
+animate_state_history(X, Δtb, nrows, ncols, strid=1, path="animation_state_lpbf_optimized_gausshess_noguess_linear10varsmooth.mp4")
+animate_measurement_history(Y, Δtb, nrows, ncols, strid=1, path="animation_measured_lpbf_optimized_gausshess_noguess_linear10varsmooth.mp4")
+animate_measurement_history(U, Δtb, nrows, ncols, strid=1, path="animation_power_lpbf_optimized_gausshess_noguess_linear10varsmooth.mp4", quantity="Power W", scale=(0, 400))
 
-save_object("traj_lpbf_partialhess_noguess_linear9varsmooth.jld2", z) #linear 4: 6x6, 80W max. Linear 5: 500W max. Linear 6: 500W, with variance constraint (all these with 1.2mm stdev). Linear 8: 0.8 mm stdev, increased matrix magnitude
+save_object("traj_lpbf_gausshess_noguess_linear10varsmooth.jld2", z) #linear 4: 6x6, 80W max. Linear 5: 500W max. Linear 6: 500W, with variance constraint (all these with 1.2mm stdev). Linear 8: 0.8 mm stdev, increased matrix magnitude Linear 10: decreased matrix magnitude, re-disabled constraint hessian
 
 xₙ = process.input_dynamics.xₙ
 zₙ = process.input_dynamics.zₙ

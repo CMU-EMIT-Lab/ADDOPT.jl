@@ -32,7 +32,7 @@ struct PlanarHeatsourceDynamics <: InputDynamics
         Qvx = xₙ * ones(nvox)' - ones(nvox) * xₙ' - dmax_x * ones(nvox, nvox)
         Qvz = zₙ * ones(nvox)' - ones(nvox) * zₙ' - dmax_z * ones(nvox, nvox)
 
-        return new(nrows, ncols, l, xₙ, zₙ, Pₘₐₓ, Pₘᵢₙ, σ, ρ, cₚ, 200Qx, 200Qz, 10Qvx, 10Qvz)
+        return new(nrows, ncols, l, xₙ, zₙ, Pₘₐₓ, Pₘᵢₙ, σ, ρ, cₚ, 20Qx, 20Qz, Qvx, Qvz)
     end
 end
 

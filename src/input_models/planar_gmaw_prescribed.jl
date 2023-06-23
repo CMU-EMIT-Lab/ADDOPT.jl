@@ -8,7 +8,6 @@ struct PlanarGMAWDynamicsPrescribed <: InputDynamics
     xₙ::Vector{Float64}
     zₙ::Vector{Float64}
 
-    k
     ρ::Float64
     cₚ::Float64
     T∞::Float64
@@ -32,11 +31,11 @@ struct PlanarGMAWDynamicsPrescribed <: InputDynamics
     F_cache::Dict{DataType,Any}
     ZW_cache::Dict{DataType,Any}
 
-    function PlanarGMAWDynamicsPrescribed(nrows, ncols, l, xₙ, zₙ, k, ρ, cₚ, T∞, Tₗ, wire_diam, h∞, h₀, hₐᵣ, η, γᵣ, γₕ, wₓ, bₕ, xmin, xmax, tmin, tmax)
+    function PlanarGMAWDynamicsPrescribed(nrows, ncols, l, xₙ, zₙ, ρ, cₚ, T∞, Tₗ, wire_diam, h∞, h₀, hₐᵣ, η, γᵣ, γₕ, wₓ, bₕ, xmin, xmax, tmin, tmax)
         F = Dict{DataType,Any}()
         ZW = Dict{DataType,Any}()
 
-        return new(nrows, ncols, l, xₙ, zₙ, k, ρ, cₚ, T∞, Tₗ, wire_diam, h∞, h₀, hₐᵣ, η, γᵣ, γₕ, wₓ, bₕ,  xmin, xmax, tmin, tmax, F, ZW)
+        return new(nrows, ncols, l, xₙ, zₙ, ρ, cₚ, T∞, Tₗ, wire_diam, h∞, h₀, hₐᵣ, η, γᵣ, γₕ, wₓ, bₕ,  xmin, xmax, tmin, tmax, F, ZW)
     end
 end
 
@@ -58,7 +57,7 @@ function dynamics_function!(id::PlanarGMAWDynamicsPrescribed, dr::AbstractVector
     rₘₚ = r[1]
     WFS = u[1]
     l, xₙ, zₙ = id.l, id.xₙ, id.zₙ
-    k, ρ, cₚ, T∞, Tₗ, wire_diam = id.k, id.ρ, id.cₚ, id.T∞, id.Tₗ, id.wire_diam
+     ρ, cₚ, T∞, Tₗ, wire_diam = id.ρ, id.cₚ, id.T∞, id.Tₗ, id.wire_diam
     h∞, h₀, hₐᵣ, η, γᵣ, γₕ, wₓ, bₕ = id.h∞, id.h₀, id.hₐᵣ, id.η, id.γᵣ, id.γₕ, id.wₓ, id.bₕ
     xmin, xmax, tmin, tmax = id.xmin, id.xmax, id.tmin, id.tmax
     TS = abs(xmax - xmin) / (tmax - tmin)
@@ -77,7 +76,7 @@ function input_function!(id::PlanarGMAWDynamicsPrescribed, ds::AbstractVector{Ty
     WFS = u[1]
     # xₜ, zₜ, rₘₚ, zₘₚ = r[1], r[2], r[3], r[4]    
     l, xₙ, zₙ = id.l, id.xₙ, id.zₙ
-    k, ρ, cₚ, T∞, wire_diam = id.k, id.ρ, id.cₚ, id.T∞, id.wire_diam
+     ρ, cₚ, T∞, wire_diam = id.ρ, id.cₚ, id.T∞, id.wire_diam
     h∞, h₀, hₐᵣ, η, γᵣ, γₕ, wₓ, bₕ = id.h∞, id.h₀, id.hₐᵣ, id.η, id.γᵣ, id.γₕ, id.wₓ, id.bₕ
     xmin, xmax, tmin, tmax = id.xmin, id.xmax, id.tmin, id.tmax
     TS = abs(xmax - xmin) / (tmax - tmin)

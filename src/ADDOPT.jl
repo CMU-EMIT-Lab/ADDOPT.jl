@@ -799,19 +799,20 @@ end
 
 function MOI.hessian_lagrangian_structure(prob::AdditiveProblem)
     obj_struct = objective_hessian_structure(prob.objective, prob.idx)
-    con_struct = constraint_hessian_structure(prob.process, prob.idx)
+    con_struct = []#constraint_hessian_structure(prob.process, prob.idx)
     return vcat(obj_struct, con_struct)
 end
 
 function MOI.eval_hessian_lagrangian(prob::AdditiveProblem, H, z, σ, μ)
-    Nz = prob.idx.Nz
-    H_obj = @view H[1:Nz]
-    H_con = @view H[(Nz+1):end]
+    # Nz = prob.idx.Nz
+    H_obj = H
+    # H_obj = @view H[1:Nz]
+    # H_con = @view H[(Nz+1):end]
 
     objective_hessian_values(prob.objective, prob.idx, H_obj)
     H_obj .*= σ
 
-    constraint_hessian_values(prob.process, prob.idx, H_con, μ)
+    # constraint_hessian_values(prob.process, prob.idx, H_con, μ)
 end
 
 MOI.features_available(prob::AdditiveProblem) = [:Grad, :Jac, :Hess]
@@ -842,7 +843,7 @@ function optimize_trajectory(problem::AdditiveProblem;
                     z₀[idx.Δtb[c][k]] = 0.04
                 end
                 z₀[idx.x[c][k]] .= isnothing(xg) ? problem.x̄ : xg #.+ randn(Nx)
-                z₀[idx.u[c][k]] .= isnothing(ug) ? input_min(id) .+ randn(Nu(id)) : ug#(input_min(id) .+ input_max(id)) ./ 2
+                z₀[idx.u[c][k]] .= isnothing(ug) ? input_min(id) : ug#(input_min(id) .+ input_max(id)) ./ 2
             end
 
             for k in (Nkb+1):(Nkb+Nkc)
