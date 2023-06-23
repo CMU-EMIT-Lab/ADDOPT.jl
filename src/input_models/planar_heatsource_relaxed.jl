@@ -139,7 +139,7 @@ function inequality_constraint_hessian_values(id::PlanarHeatsourceDynamics, H::A
 end
 
 function inequality_interstep_constraint_hessian_structure(id::PlanarHeatsourceDynamics, i)
-    box = col_row((i < 3 ? size(id.Qvx) : size(id.Qvz))...)
+    box = col_row(id.nrows * id.ncols, id.nrows * id.ncols)
 
     box1 = [(row, col + Nu(id)) for (row, col) in box]
     box2 = [(row + Nu(id), col) for (row, col) in box]

@@ -1,6 +1,6 @@
 module ADDOPT
 
-using PrettyTables
+@time using PrettyTables
 @time using MathOptInterface, Ipopt
 @time using LinearAlgebra, ForwardDiff
 @time using Symbolics, SparseArrays, SparseDiffTools
@@ -658,11 +658,19 @@ function inequality_interstep_constraint_hessian_structure(process::Process{ID,T
 end
 
 function total_build_hessian_structure(process::Process{ID,TD,PD}, idx, c, k) where {ID,TD,PD}
-    return vcat(
-        collocation_constraint_hessian_structure(process, c, k, idx),
-        equality_constraint_hessian_structure(process, c, k, idx),
-        inequality_constraint_hessian_structure(process, c, k, idx),
-        inequality_interstep_constraint_hessian_structure(process, c, k, idx))
+    if k < idx.Nkb
+
+        return vcat(
+            collocation_constraint_hessian_structure(process, c, k, idx),
+            equality_constraint_hessian_structure(process, c, k, idx),
+            inequality_constraint_hessian_structure(process, c, k, idx),
+            inequality_interstep_constraint_hessian_structure(process, c, k, idx))
+    else
+        return vcat(
+            collocation_constraint_hessian_structure(process, c, k, idx),
+            equality_constraint_hessian_structure(process, c, k, idx),
+            inequality_constraint_hessian_structure(process, c, k, idx))
+    end
 end
 
 function total_cool_hessian_structure(process::Process{ID,TD,PD}, idx, c, k) where {ID,TD,PD}
@@ -729,11 +737,15 @@ function inequality_interstep_constraint_hessian_values(process::Process{ID,TD,P
     return i, j
 end
 
-function total_build_hessian_values(process::Process{ID,TD,PD}, idx, H::AbstractVector{T}, μ, i, j) where {T,ID,TD,PD}
+function total_build_hessian_values(process::Process{ID,TD,PD}, idx, H::AbstractVector{T}, μ, i, j, k) where {T,ID,TD,PD}
     i, j = collocation_constraint_hessian_values(process, idx, H, μ, i, j)
     i, j = equality_constraint_hessian_values(process, idx, H, μ, i, j)
     i, j = inequality_constraint_hessian_values(process, idx, H, μ, i, j)
-    i, j = inequality_interstep_constraint_hessian_values(process, idx, H, μ, i, j)
+    if k < idx.Nkb
+        i, j = inequality_interstep_constraint_hessian_values(process, idx, H, μ, i, j)
+    else
+        j += idx.Nineq_inter
+    end
 
     return i, j
 end
@@ -753,13 +765,17 @@ function constraint_hessian_values(process::Process{ID,TD,PD}, idx, H::AbstractV
         end
 
         for k in 1:(Nkb-1)
-            i, j = total_build_hessian_values(process, idx, H, μ, i, j)
+            i, j = total_build_hessian_values(process, idx, H, μ, i, j, k)
         end
 
         k = Nkb
-        i, j = total_build_hessian_values(process, idx, H, μ, i, j)
+        i, j = total_build_hessian_values(process, idx, H, μ, i, j, k)
 
         for k in (Nkb+1):(Nkb+Nkc-1)
+            if k == Nkb + Nkc - 1 && c == Nc
+                break
+            end
+
             i, j = total_cool_hessian_values(process, idx, H, μ, i, j)
         end
     end
@@ -845,7 +861,15 @@ function optimize_trajectory(problem::AdditiveProblem;
     gt = zeros(Nz)
     jt = zeros(length(problem.constraint_jacobian_sparsity))
     μ0 = ones(Nconstr)
-    H0 = zeros(length(MOI.hessian_lagrangian_structure(problem)))
+    structure = MOI.hessian_lagrangian_structure(problem)
+    rs = [r for (r, c) in structure]
+    cs = [c for (r, c) in structure]
+    @show maximum(rs)
+    @show minimum(rs)
+    @show maximum(cs)
+    @show minimum(cs)
+    @show Nz
+    H0 = zeros(length(structure))
     println("Checking objective function...")
     @time MOI.eval_objective(problem, z₀)
     @time MOI.eval_objective(problem, z₀)
