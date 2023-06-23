@@ -613,174 +613,6 @@ function constraint_jacobian_sparsity(idx, process::Process; Δtb=nothing, Δtc=
     return total_structure, sparsity_cache
 end
 
-
-function collocation_constraint_hessian_structure(process::Process{ID,TD,PD}, c, k, idx) where {ID,TD,PD}
-    return []
-end
-
-function equality_constraint_hessian_structure(process::Process{ID,TD,PD}, c, k, idx) where {ID,TD,PD}
-    Neq = idx.Neq
-    structure = Vector{Tuple{Int,Int}}()
-
-    for i in 1:Neq
-        str = equality_constraint_hessian_structure(process.input_dynamics, i)
-        str = [(row + idx.u[c][k][1] - 1, col + idx.u[c][k][1] - 1) for (row, col) in str]
-        append!(structure, str)
-    end
-
-    return structure
-end
-
-function inequality_constraint_hessian_structure(process::Process{ID,TD,PD}, c, k, idx) where {ID,TD,PD}
-    Nineq = idx.Nineq
-    structure = Vector{Tuple{Int,Int}}()
-
-    for i in 1:Nineq
-        str = inequality_constraint_hessian_structure(process.input_dynamics, i)
-        str = [(row + idx.u[c][k][1] - 1, col + idx.u[c][k][1] - 1) for (row, col) in str]
-        append!(structure, str)
-    end
-
-    return structure
-end
-
-function inequality_interstep_constraint_hessian_structure(process::Process{ID,TD,PD}, c, k, idx) where {ID,TD,PD}
-    Nineq_inter = idx.Nineq_inter
-    structure = Vector{Tuple{Int,Int}}()
-
-    for i in 1:Nineq_inter
-        str = inequality_interstep_constraint_hessian_structure(process.input_dynamics, i)
-        str = [(row + idx.u[c][k][1] - 1, col + idx.u[c][k][1] - 1) for (row, col) in str]
-        append!(structure, str)
-    end
-
-    return structure
-end
-
-function total_build_hessian_structure(process::Process{ID,TD,PD}, idx, c, k) where {ID,TD,PD}
-    if k < idx.Nkb
-
-        return vcat(
-            collocation_constraint_hessian_structure(process, c, k, idx),
-            equality_constraint_hessian_structure(process, c, k, idx),
-            inequality_constraint_hessian_structure(process, c, k, idx),
-            inequality_interstep_constraint_hessian_structure(process, c, k, idx))
-    else
-        return vcat(
-            collocation_constraint_hessian_structure(process, c, k, idx),
-            equality_constraint_hessian_structure(process, c, k, idx),
-            inequality_constraint_hessian_structure(process, c, k, idx))
-    end
-end
-
-function total_cool_hessian_structure(process::Process{ID,TD,PD}, idx, c, k) where {ID,TD,PD}
-    return collocation_constraint_hessian_structure(process, c, k, idx)
-end
-
-function constraint_hessian_structure(process::Process, idx)
-    Nc, Nkb, Nkc = idx.Nc, idx.Nkb, idx.Nkc
-    structure = Vector{Tuple{Int,Int}}()
-
-    for c in 1:Nc
-        if c > 1
-            append!(structure, total_cool_hessian_structure(process, idx, c, k))
-        end
-
-        for k in 1:(Nkb-1)
-            append!(structure, total_build_hessian_structure(process, idx, c, k))
-        end
-
-        k = Nkb
-        append!(structure, total_build_hessian_structure(process, idx, c, k))
-
-        for k in (Nkb+1):(Nkb+Nkc-1)
-            append!(structure, total_cool_hessian_structure(process, idx, c, k))
-        end
-    end
-
-    return structure
-end
-
-
-function collocation_constraint_hessian_values(process::Process{ID,TD,PD}, idx, H::AbstractVector{T}, μ, i, j) where {T,ID,TD,PD}
-    j += idx.Nstates
-    return i, j
-end
-
-function equality_constraint_hessian_values(process::Process{ID,TD,PD}, idx, H::AbstractVector{T}, μ, i, j) where {T,ID,TD,PD}
-    Neq = idx.Neq
-
-    for k in 1:Neq
-        i, j = equality_constraint_hessian_values(process.input_dynamics, H, μ, i, j, k)
-    end
-
-    return i, j
-end
-
-function inequality_constraint_hessian_values(process::Process{ID,TD,PD}, idx, H::AbstractVector{T}, μ, i, j) where {T,ID,TD,PD}
-    Nineq = idx.Nineq
-
-    for k in 1:Nineq
-        i, j = inequality_constraint_hessian_values(process.input_dynamics, H, μ, i, j, k)
-    end
-
-    return i, j
-end
-
-function inequality_interstep_constraint_hessian_values(process::Process{ID,TD,PD}, idx, H::AbstractVector{T}, μ, i, j) where {T,ID,TD,PD}
-    Nineq_inter = idx.Nineq_inter
-
-    for k in 1:Nineq_inter
-        i, j = inequality_interstep_constraint_hessian_values(process.input_dynamics, H, μ, i, j, k)
-    end
-
-    return i, j
-end
-
-function total_build_hessian_values(process::Process{ID,TD,PD}, idx, H::AbstractVector{T}, μ, i, j, k) where {T,ID,TD,PD}
-    i, j = collocation_constraint_hessian_values(process, idx, H, μ, i, j)
-    i, j = equality_constraint_hessian_values(process, idx, H, μ, i, j)
-    i, j = inequality_constraint_hessian_values(process, idx, H, μ, i, j)
-    if k < idx.Nkb
-        i, j = inequality_interstep_constraint_hessian_values(process, idx, H, μ, i, j)
-    else
-        j += idx.Nineq_inter
-    end
-
-    return i, j
-end
-
-function total_cool_hessian_values(process::Process{ID,TD,PD}, idx, H::AbstractVector{T}, μ, i, j) where {T,ID,TD,PD}
-    return collocation_constraint_hessian_values(process, idx, H, μ, i, j)
-end
-
-function constraint_hessian_values(process::Process{ID,TD,PD}, idx, H::AbstractVector{T}, μ) where {T,ID,TD,PD}
-    Nc, Nkb, Nkc = idx.Nc, idx.Nkb, idx.Nkc
-    i = 1
-    j = 1
-
-    for c in 1:Nc
-        if c > 1
-            i, j = total_cool_hessian_values(process, idx, H, μ, i, j)
-        end
-
-        for k in 1:(Nkb-1)
-            i, j = total_build_hessian_values(process, idx, H, μ, i, j, k)
-        end
-
-        k = Nkb
-        i, j = total_build_hessian_values(process, idx, H, μ, i, j, k)
-
-        for k in (Nkb+1):(Nkb+Nkc-1)
-            if k == Nkb + Nkc - 1 && c == Nc
-                break
-            end
-
-            i, j = total_cool_hessian_values(process, idx, H, μ, i, j)
-        end
-    end
-end
-
 function MOI.eval_objective(prob::AdditiveProblem, z)
     return cost(prob.objective, z, prob.idx)
 end
@@ -798,21 +630,12 @@ function MOI.eval_constraint_jacobian(prob::AdditiveProblem, jac, z)
 end
 
 function MOI.hessian_lagrangian_structure(prob::AdditiveProblem)
-    obj_struct = objective_hessian_structure(prob.objective, prob.idx)
-    con_struct = []#constraint_hessian_structure(prob.process, prob.idx)
-    return vcat(obj_struct, con_struct)
+    return objective_hessian_structure(prob.objective, prob.idx)
 end
 
 function MOI.eval_hessian_lagrangian(prob::AdditiveProblem, H, z, σ, μ)
-    # Nz = prob.idx.Nz
-    H_obj = H
-    # H_obj = @view H[1:Nz]
-    # H_con = @view H[(Nz+1):end]
-
-    objective_hessian_values(prob.objective, prob.idx, H_obj)
-    H_obj .*= σ
-
-    # constraint_hessian_values(prob.process, prob.idx, H_con, μ)
+    objective_hessian_values(prob.objective, prob.idx, H)
+    H .*= σ
 end
 
 MOI.features_available(prob::AdditiveProblem) = [:Grad, :Jac, :Hess]
