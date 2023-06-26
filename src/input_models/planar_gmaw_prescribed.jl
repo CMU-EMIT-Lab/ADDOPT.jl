@@ -102,5 +102,5 @@ function input_function!(id::PlanarGMAWDynamicsPrescribed, ds::AbstractVector{Ty
     # Forced / input dynamics
     @. dE += η * F * P              # Add in torch power
     @. dE += F * (cₚ * ṁ * T∞)      # Add in energy contribution from incoming wire (assume room temp)
-    @. dm += F * ṁ
+    @. dm += F * ṁ / (l^3 * ρ)
 end
