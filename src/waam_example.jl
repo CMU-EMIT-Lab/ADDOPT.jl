@@ -1,98 +1,83 @@
 include("ADDOPT.jl")
 using LinearAlgebra
-using .ADDOPT: PlanarWAAMHardness, AdditiveProblem, QuadraticObjective, optimize_trajectory, generate_wall_z₀, animate_state_history, input_idle, PlanarGMAWDynamics, animate_measurement_history, constraints!, PlanarWAAM, PlanarWAAMPrescribedMotion, state_min, property_min, temperature!
+using .ADDOPT: AdditiveProblem, QuadraticObjective, optimize_trajectory, generate_wall_z₀, animate_state_history, input_idle, animate_measurement_history, state_min, property_min, temperature!, WAAMPrescribedMotion, VoxelEnergyFillDynamics, animate_3Dmeasurement_history_planar, animate_3Dstate_history_planar
 using Plots
+using JLD2
 
-A = 1e4
-τ = 9625
-
-γᵣ = 5
-γₕ = 10
-bₕ = 2
-wₓ = 2.5
-
-σ = 5.670374419 * 10^(-8) # Stefan-Boltzmann, W / (m⁴⋅ K⁴)
+# A = 1e4
+# τ = 9625
+# σ = 5.670374419 * 10^(-8) # Stefan-Boltzmann, W / (m⁴⋅ K⁴)
 
 h∞ = 10 # W / m^2 K
 h₀ = 7500 # W / m^2 K
 hₐᵣ = 500
 η = 0.95
 
-kₘ = 34 # W / mK
-kₐ = 4.6e-2 # W / mK
-
-ρₘ = 7826.0e6 # kg / m^3 # mg
-ρₐ = 1.293e6 # kg / m^3 # mg
-
-cₚₘ = 502.416e-6 # J / kg K # mg 
-cₚₐ = 400e-6#717.0e-6 # J / kg K # mg 
+k = 34.0 # W / mK
+ρ = 7826.0e6 # kg / m^3 # mg
+cₚ = 502.416e-6 # J / kg K # mg 
 
 T∞ = 295.0 # K
 T₀ = 295.0 # K
 wire_diam = 0.001143 # m, aka 0.045in
 Tₗ = 1784.0 # K, liquidus
 
-nrows = 4
-ncols = 16
-nthick = 7
-nvox = nrows * ncols
+nx = 10
+ny = 6
+nz = 3
+nvox = nz * ny * nx
 
 Tmin = T₀
 Tmax = 1900 # K
 
 l = 0.001 # m, aka 1mm
-w = 0.010 # m, aka 10mm
 
-# process = PlanarWAAMHardness(nrows, ncols, nthick, l, k, ρ, cₚ, T∞, T₀, Tₗ, wire_diam, h∞, h₀, hₐᵣ, η, γᵣ, γₕ, wₓ, bₕ, A, τ)
-# process = PlanarWAAM(nrows, ncols, nthick, l, k, ρ, cₚ, T∞, T₀, Tₗ, wire_diam, h∞, h₀, hₐᵣ, η, γᵣ, γₕ, wₓ, bₕ)
-process = PlanarWAAMPrescribedMotion(nrows, ncols, l, w, kₘ, kₐ, ρₘ, ρₐ, cₚₘ, cₚₐ, T∞, T₀, wire_diam, h∞, h₀, hₐᵣ, η, γᵣ, γₕ, wₓ, bₕ, Tmin, Tmax, l, l * (ncols - 1), 0.0, 1.8)
+p̄ = [[l; (ny+1)/2*l; l], [nx*l; (ny+1)/2*l; l]]
+t̄ = [0.0; 1.8]
 
+process = WAAMPrescribedMotion(nx, ny, nz, l, k, ρ, cₚ, T∞, T₀, wire_diam, h∞, h₀, hₐᵣ, η, Tmin, Tmax, p̄, t̄)
 
-# Q = Diagonal([1e-4 * ones(nvox); 1e-3 * ones(nvox); 1e0 * ones(nvox); 1e-2 * ones(4)]) #1e4 mass in kg
-# Q = Diagonal([1e-4 * ones(nvox); 1e-3 * ones(nvox); 1e-2 * ones(4)]) #1e4 mass in kg
-Q = Diagonal([1e-5 * ones(nvox); 1e0 * ones(nvox); 1e-2 * ones(1)]) #1e4 mass in kg
-# R = Diagonal(1e-2 * ones(4))
+xdist = zeros(nx, ny, nz)
+xdist[:, 2:5, 1:3] .= 1
+xdist = reshape(xdist, (nvox))
+
+Q = Diagonal([1e-5 * ones(nvox); 1e0 * ones(nvox)]) #1e4 mass in kg
 R = Diagonal(1e-2 * ones(1))
-Qf = 10 * Q #cₚ * T∞ * 1e-40 * ones(nvox)
-# x₀ = [zeros(nvox); 1e-40 * ones(nvox); zeros(nvox); 0.001; 0.0; l; l]
-# x₀ = [zeros(nvox); 1e-40 * ones(nvox); 0.001; 0.0; l; l]
-x₀ = [zeros(2nvox); l]
-# x̄ = [(0.005 * l^2 * ρ) * cₚ * T∞ * ones(nvox); (0.005 * l^2 * ρ) * ones(nvox); 0.4 * ones(nvox); l*ncols; l*nrows; l; l]
-# x̄ = [(0.005 * l^2 * ρ) * cₚ * T∞ * ones(nvox); (0.005 * l^2 * ρ) * ones(nvox); l*ncols; l*nrows; l; l]
-x̄ = [(0.001 * l^2 * ρₘ * cₚₘ) * T∞ * ones(nvox); ones(nvox); l]
-# ū = [0.0; 0.0; 1.0; 0.0059]
+Qf = 10 * Q
+x₀ = zeros(2nvox)
+x̄ = [(l^3 * ρ * cₚ) * T∞ * xdist; xdist]
 ū = [0.0]
 objective = QuadraticObjective(Q, R, Qf, x̄, ū)
 
-# Nx, Ny, l should be moved to the transfer process
-Nkb = 180
-Nkc = 1220
+Nkb = 90#180
+Nkc = 360#720#1220
 Nc = 1
-Δtb = 0.01
-Δtc = 0.01
+Δtb = 0.02#0.01
+Δtc = 0.02#0.01
 problem = AdditiveProblem(process, objective, Nkb, Nkc, Nc, x₀, x̄=x̄, Δtb=Δtb, Δtc=Δtc, final_constraint=false)
 
 z₀ = generate_wall_z₀(process, problem.idx, x₀, Δtb, Δtc; free_time=false)
 X = vcat([[z₀[problem.idx.x[c][k]] for k in 1:(Nkb+Nkc)] for c in 1:Nc]...)
 U = vcat([[z₀[problem.idx.u[c][k]] for k in 1:Nkb] for c in 1:Nc]...)
-
-
-animate_state_history(X, Δtb, nrows, ncols, strid=4, path="animation_state_prmotx.mp4")
+ 
+# animate_3Dstate_history_planar(X, Δtb, nx, ny, nz; path="animation_state3d3.mp4", strid=2)
 
 function temperature(X, N)
     s = @view X[1:2N]
     T = zeros(N)
-
+ 
     temperature!(process.transfer_dynamics, T, s)
     return T
 end
 
 Y = [temperature(X[k], nvox) for k in 1:length(X)]
+# animate_3Dmeasurement_history_planar(Y, X, Δtb, nx, ny, nz; path="animation_measured3d3.mp4", strid=2)
 
-animate_measurement_history(Y, Δtb, nrows, ncols, strid=4, path="animation_measured_prmotx.mp4")
+z, X, U, Δt = optimize_trajectory(problem; max_iter=10_000, c_tol=1.0e-5, xg=x₀, ug=[0.0677]) #c_tol=1.0e-6
+Y = [temperature(X[k], nvox) for k in 1:length(X)]
 
-# z, X, U, Δt = optimize_trajectory(problem; max_iter=10_000, c_tol=1.0e-6, xg=x₀, ug=[0.0677])
+animate_3Dstate_history_planar(X, Δtb, nx, ny, nz; path="animation_state3d3_optimized.mp4", strid=2)
+animate_3Dmeasurement_history_planar(Y, X, Δtb, nx, ny, nz; path="animation_measured3d3_optimized.mp4", strid=2)
 
-# animate_state_history(X, Δtb, nrows, ncols, strid=4, path="animation_state_prmot_optimized_nohess.mp4")
-# Y = [temperature(X[k], nvox) for k in 1:length(X)]
-# animate_measurement_history(Y, Δtb, nrows, ncols, strid=4, path="animation_measured_prmot_optimized_nohess.mp4")
+save_object("traj_waam3d3_prescribed.jld2", z)
+# for no. 3, loosened constraint tolerance to e-5 from e-6, doubled time step size, ma97

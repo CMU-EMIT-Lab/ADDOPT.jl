@@ -6,6 +6,7 @@ module ADDOPT
 @time using Symbolics, SparseArrays, SparseDiffTools
 @time using SparseArrays: findnz
 const MOI = MathOptInterface
+import HSL_jll
 
 abstract type Dynamics end
 
@@ -643,12 +644,14 @@ MOI.initialize(prob::AdditiveProblem, features) = nothing
 MOI.jacobian_structure(prob::AdditiveProblem) = prob.constraint_jacobian_sparsity
 
 function optimize_trajectory(problem::AdditiveProblem;
-    tol=1.0e-6, c_tol=1.0e-6, max_iter=500, z₀=nothing, λ₀=nothing, ug=nothing, xg=nothing)
+    tol=1.0e-6, c_tol=1.0e-6, max_iter=500, z₀=nothing, λ₀=nothing, ug=nothing, xg=nothing, solv="ma97")
 
     solver = Ipopt.Optimizer()
     solver.options["max_iter"] = max_iter
     solver.options["tol"] = tol
     solver.options["constr_viol_tol"] = c_tol
+    solver.options["hsllib"] = HSL_jll.libhsl_path
+    solver.options["linear_solver"] = solv
 
     idx = problem.idx
     Nz, Nconstr = idx.Nz, idx.Nconstr

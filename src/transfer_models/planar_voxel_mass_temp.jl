@@ -47,8 +47,8 @@ struct PlanarVoxelMassEnergyDynamics <: TransferDynamics
 end
 
 @inline Ns(td::PlanarVoxelMassEnergyDynamics)::Int = td.nrows * td.ncols * 2
-state_min(td::PlanarVoxelMassEnergyDynamics) = [td.l^2 * td.w * td.ρₐ * td.cₚₐ * td.Tmin * ones(Ns(td) ÷ 2); td.l^2 * td.w * td.ρₐ * ones(Ns(td) ÷ 2)]
-state_max(td::PlanarVoxelMassEnergyDynamics) = [td.l^2 * td.w * td.ρₘ * td.cₚₘ * td.Tmax * ones(Ns(td) ÷ 2); td.l^2 * td.w * td.ρₘ * ones(Ns(td) ÷ 2)]
+state_min(td::PlanarVoxelMassEnergyDynamics) = zeros(Ns(td))
+state_max(td::PlanarVoxelMassEnergyDynamics) = Inf * ones(Ns(td))
 
 function dynamics_function!(td::PlanarVoxelMassEnergyDynamics, ds::AbstractVector{Ty}, s, t) where {Ty}
     nrows, ncols = td.nrows, td.ncols

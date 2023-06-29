@@ -5,6 +5,7 @@ include("input_models/planar_gmaw_prescribed.jl")
 # include("input_models/planar_heatsource.jl")
 include("input_models/planar_heatsource_relaxed.jl")
 include("input_models/planar_heatsource_prescribed.jl")
+include("input_models/gmaw_prescribed.jl")
 
 # Property models
 include("property_models/hardness.jl")
@@ -15,6 +16,7 @@ include("property_models/null_property.jl")
 include("transfer_models/newton_lumped.jl")
 include("transfer_models/planar_voxel_mass_temp.jl")
 include("transfer_models/planar_voxel_temp.jl")
+include("transfer_models/voxel_energy_fill.jl")
 
 struct Process{ID<:InputDynamics,TD<:TransferDynamics,PD<:PropertyDynamics}
     input_dynamics::ID
@@ -35,6 +37,41 @@ function row_col(n_rows, n_cols, index)
     col = mod(index, 1:n_cols)
 
     return row, col
+end
+
+function gen_xyz(nx, ny, nz, l)
+    x = zeros(nx, ny, nz)
+    y = zeros(nx, ny, nz)
+    z = zeros(nx, ny, nz)
+
+    for i in 1:nx
+        x[i, :, :] .= i
+    end
+
+    for i in 1:ny
+        y[:, i, :] .= i
+    end
+
+    for i in 1:nz
+        z[:, :, i] .= i
+    end
+
+    x = reshape(x, (nx * ny * nz)) .* l
+    y = reshape(y, (nx * ny * nz)) .* l
+    z = reshape(z, (nx * ny * nz)) .* l
+
+    return x, y, z
+end
+
+function WAAMPrescribedMotion(nx, ny, nz, l, k, ρ, cₚ, T∞, T₀, wire_diam, h∞, h₀, hₐᵣ, η, Tmin, Tmax, p̄, t̄)
+    xₙ, yₙ, zₙ = gen_xyz(nx, ny, nz, l)
+    Tₗ = 1700.0 # K
+
+    id = GMAWDynamicsPrescribed(nx, ny, nz, l, xₙ, yₙ, zₙ, ρ, cₚ, T∞, Tₗ, wire_diam, h∞, h₀, hₐᵣ, η, wire_diam, wire_diam, p̄, t̄)
+    td = VoxelEnergyFillDynamics(nx, ny, nz, l, xₙ, yₙ, zₙ, k, ρ, cₚ, T∞, T₀, wire_diam, h∞, h₀, Tmin, Tmax)
+    pd = NullPropertyDynamics()
+
+    return Process(id, td, pd)
 end
 
 function PlanarWAAMHardness(nrows, ncols, l, k, ρ, cₚ, T∞, T₀, Tₗ, wire_diam, h∞, h₀, hₐᵣ, η, γᵣ, γₕ, wₓ, bₕ, A, τ)
