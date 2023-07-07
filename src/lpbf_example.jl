@@ -29,46 +29,47 @@ process = PlanarLPBF(nrows, ncols, l, k, ρ, cₚ, T∞, h∞, σ, 500.0, 20.0)
 # process = PlanarLPBFPrescribedMotion(nrows, ncols, l, k, ρ, cₚ, T∞, h∞, σ, l, l * ncols, l, l * nrows, 0.0, 1.8)
 
 # Q = Diagonal([1e-6 * ones(nvox); 1e6 * ones(nvox); 1e-4 * ones(2)]) #1e4 mass in kg
-Q = Diagonal([1e-6 * ones(nvox); 1e6 * ones(nvox)]) #1e4 mass in kg
+Q = Diagonal([1e-6 * ones(nvox); 1e6 * ones(nvox); 1e-4; 1e-4]) #1e4 mass in kg
 # R = Diagonal([1e-2; 1e-2; 1e-6; 0 * ones(nvox)])
-R = Diagonal(1e-6 * ones(nvox))
+R = Diagonal([1e-6 * ones(nvox); 1e-4; 1e-4])
 
 # R = Diagonal([1e-3])
 Qf = 10 * Q
 # x₀ = [T∞ * ones(nvox); zeros(nvox); 0.0; 0.0]
-x₀ = [T∞ * ones(nvox); zeros(nvox)]
+x₀ = [T∞ * ones(nvox); zeros(nvox); l; l]
 # x̄ = [T∞ * ones(nvox); 0.9 * ones(nvox); l * ncols; l * nrows]
-x̄ = [T∞ * ones(nvox); 0.6 * ones(nvox)]
+x̄ = [T∞ * ones(nvox); 0.6 * ones(nvox); l; l]
 # ū = [0.0; 0.0; 20.0; zeros(nvox)]
-ū = zeros(nvox)
+ū = zeros(nvox + 2)
 
 # ū = [20.0]
 objective = QuadraticObjective(Q, R, Qf, x̄, ū)
 
 # Nx, Ny, l should be moved to the transfer process
-Nkb = 180
+Nkb = 380 #180
 Nkc = 320
 Nc = 1
 Δtb = 0.01
 Δtc = 0.01
 problem = AdditiveProblem(process, objective, Nkb, Nkc, Nc, x₀, x̄=x̄, Δtb=Δtb, Δtc=Δtc, final_constraint=false)
 
-z, X, U, Δt = optimize_trajectory(problem; max_iter=10_000, c_tol=1.0e-6, ug=30.0 * (ones(nvox) + randn(nvox)), xg=[1200 * ones(nvox); 0.4 * ones(nvox)])
+z, X, U, Δt = optimize_trajectory(problem; max_iter=10_000, c_tol=1.0e-6, ug=[30.0 * (ones(nvox) + randn(nvox)); randn(2)], xg=[1200 * ones(nvox); 0.4 * ones(nvox); l / 2 * ncols; l / 2 * nrows])
 
 Y = [X[k][1:nvox] for k in 1:length(X)]
-animate_state_history(X, Δtb, nrows, ncols, strid=1, path="animation_state_lpbf_optimized_gausshess_noguess_linear10varsmooth.mp4")
-animate_measurement_history(Y, Δtb, nrows, ncols, strid=1, path="animation_measured_lpbf_optimized_gausshess_noguess_linear10varsmooth.mp4")
-animate_measurement_history(U, Δtb, nrows, ncols, strid=1, path="animation_power_lpbf_optimized_gausshess_noguess_linear10varsmooth.mp4", quantity="Power W", scale=(0, 400))
+animate_state_history([x[1:2nvox] for x in X], Δtb, nrows, ncols, strid=1, path="animation_state_lpbf_optimized_gausshess_noguess_linear13varsmooth.mp4")
+animate_measurement_history(Y, Δtb, nrows, ncols, strid=1, path="animation_measured_lpbf_optimized_gausshess_noguess_linear13varsmooth.mp4")
+animate_measurement_history([u[1:nvox] for u in U], Δtb, nrows, ncols, strid=1, path="animation_power_lpbf_optimized_gausshess_noguess_linear13varsmooth.mp4", quantity="Power W", scale=(0, 400))
 
-save_object("traj_lpbf_gausshess_noguess_linear10varsmooth.jld2", z) #linear 4: 6x6, 80W max. Linear 5: 500W max. Linear 6: 500W, with variance constraint (all these with 1.2mm stdev). Linear 8: 0.8 mm stdev, increased matrix magnitude Linear 10: decreased matrix magnitude, re-disabled constraint hessian
+save_object("traj_lpbf_gausshess_noguess_linear13varsmooth.jld2", z) #linear 4: 6x6, 80W max. Linear 5: 500W max. Linear 6: 500W, with variance constraint (all these with 1.2mm stdev). Linear 8: 0.8 mm stdev, increased matrix magnitude Linear 10: decreased matrix magnitude, re-disabled constraint hessian
+# 11 new motion constraint, 12 covariance = 0 constraint, 13: 2 extra build seconds
 
 xₙ = process.input_dynamics.xₙ
 zₙ = process.input_dynamics.zₙ
 
-xt = [sum(xₙ.*U[k])/sum(U[k]) for k in 1:length(X)]
-zt = [sum(zₙ.*U[k])/sum(U[k]) for k in 1:length(X)]
+xt = [x[2nvox+1] for x in X]
+zt = [x[2nvox+2] for x in X]
 
-P = [sum(U[k][:]) for k in 1:length(U)]
+P = [sum(u[1:nvox]) for u in U]
 plot(P)
 
 plot(xt, zt)

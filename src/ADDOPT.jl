@@ -21,22 +21,15 @@ Ns(td::TransferDynamics) = 0
 
 Nc_ineq(id::Dynamics) = 0
 Nc_eq(id::Dynamics) = 0
-Nc_ineq_inter(id::Dynamics) = 0
 
-function equality_constraint!(id::InputDynamics, c::AbstractVector{Ty}, u, t) where {Ty}
+function equality_constraint!(id::InputDynamics, c::AbstractVector{Ty}, r, u, t) where {Ty}
 end
 
-function inequality_constraint!(id::InputDynamics, c::AbstractVector{Ty}, u, t) where {Ty}
+function inequality_constraint!(id::InputDynamics, c::AbstractVector{Ty}, r, u, t) where {Ty}
 end
 
 ineq_min(id::Dynamics) = []
 ineq_max(id::Dynamics) = []
-
-function inequality_constraint_interstep!(id::InputDynamics, c::AbstractVector{Ty}, uₖ, t, uₖ₊₁) where {Ty}
-end
-
-ineq_inter_min(id::Dynamics) = []
-ineq_inter_max(id::Dynamics) = []
 
 include("processes.jl")
 include("objectives.jl")
@@ -74,7 +67,7 @@ struct AdditiveProblem{OB<:Objective,ID<:InputDynamics,TD<:TransferDynamics,PD<:
     function AdditiveProblem(process::Process{ID,TD,PD}, objective::OB,
         Nkb, Nkc, Nc, x₀; x̄=nothing, Δtb=nothing, Δtc=nothing, final_constraint=false) where {OB<:Objective,ID<:InputDynamics,TD<:TransferDynamics,PD<:PropertyDynamics}
         id, td, pd = process.input_dynamics, process.transfer_dynamics, process.property_dynamics
-        idx = generate_z_indices(Nkb, Nkc, Nc, Nu(id), Nr(id), Ns(td), Nα(pd), Nc_eq(id), Nc_ineq(id), Nc_ineq_inter(id), Δtb, Δtc, final_constraint)
+        idx = generate_z_indices(Nkb, Nkc, Nc, Nu(id), Nr(id), Ns(td), Nα(pd), Nc_eq(id), Nc_ineq(id), Δtb, Δtc, final_constraint)
 
         println("Preparing sparsity")
         con_jacobian_sparsity, sparsity_cache = constraint_jacobian_sparsity(idx, process; Δtb=Δtb, Δtc=Δtc, final_constraint=final_constraint)
@@ -88,7 +81,7 @@ struct AdditiveProblem{OB<:Objective,ID<:InputDynamics,TD<:TransferDynamics,PD<:
     end
 end
 
-function generate_z_indices(Nkb, Nkc, Nc, Nu, Nr, Ns, Nα, Neq, Nineq, Nineq_inter, Δtb, Δtc, final_constraint)
+function generate_z_indices(Nkb, Nkc, Nc, Nu, Nr, Ns, Nα, Neq, Nineq, Δtb, Δtc, final_constraint)
     free_build_time = isnothing(Δtb)
     free_cool_time = isnothing(Δtc)
 
@@ -114,11 +107,11 @@ function generate_z_indices(Nkb, Nkc, Nc, Nu, Nr, Ns, Nα, Neq, Nineq, Nineq_int
     Δtb = free_build_time ? [[k + (Nstates_total + Nu_total + ΔtbPerCycle * (c - 1)) for k in 1:Nkb] for c in 1:Nc] : nothing # z[Δtb[c][k]] gives Δtb_(c,k), scalar
     Δtc = free_cool_time ? [vcat([0 for k in 1:Nkb], [k + (Nstates_total + Nu_total + NΔtb_total + ΔtcPerCycle * (c - 1)) for k in 1:Nkc]) for c in 1:Nc] : nothing
 
-    Nconb = Nstates + Neq + Nineq + Nineq_inter
+    Nconb = Nstates + Neq + Nineq
     Nconc = Nstates
     Nconstr = Nconb * (Nkb * Nc) + Nconc * (Nkc * Nc - 1) + (final_constraint ? 2Nstates : Nstates)
 
-    return (Nz=Nz, Nstates=Nstates, u=u, x=x, Δtb=Δtb, Δtc=Δtc, Nconstr=Nconstr, Nkb=Nkb, Nkc=Nkc, Nc=Nc, Nu=Nu, Neq=Neq, Nineq=Nineq, Nineq_inter=Nineq_inter, Nconb=Nconb, Nconc=Nconc)
+    return (Nz=Nz, Nstates=Nstates, u=u, x=x, Δtb=Δtb, Δtc=Δtc, Nconstr=Nconstr, Nkb=Nkb, Nkc=Nkc, Nc=Nc, Nu=Nu, Neq=Neq, Nineq=Nineq, Nconb=Nconb, Nconc=Nconc)
 end
 
 function combined_dynamics!(f, x, u, process::Process{ID,TD,PD}, t) where {ID,TD,PD}
@@ -175,7 +168,7 @@ function equality_constraint!(process::Process{ID,TD,PD}, r::AbstractVector{T}, 
     nr = Nr(process.input_dynamics)
     rₖ = view(xₖ, (ns+nα+1):(ns+nα+nr))
 
-    equality_constraint!(process.input_dynamics, r, uₖ, t)
+    equality_constraint!(process.input_dynamics, r, rₖ, uₖ, t)
 end
 
 function inequality_constraint!(process::Process{ID,TD,PD}, r::AbstractVector{T}, xₖ, uₖ, t) where {T,ID,TD,PD}
@@ -184,30 +177,18 @@ function inequality_constraint!(process::Process{ID,TD,PD}, r::AbstractVector{T}
     nr = Nr(process.input_dynamics)
     rₖ = view(xₖ, (ns+nα+1):(ns+nα+nr))
 
-    inequality_constraint!(process.input_dynamics, r, uₖ, t)
-end
-
-function inequality_interstep_constraint!(process::Process{ID,TD,PD}, r::AbstractVector{T}, xₖ, uₖ, xₖ₊₁, uₖ₊₁, Δt, t) where {T,ID,TD,PD}
-    ns = Ns(process.transfer_dynamics)
-    nα = Nα(process.property_dynamics)
-    nr = Nr(process.input_dynamics)
-    rₖ = view(xₖ, (ns+nα+1):(ns+nα+nr))
-    rₖ₊₁ = view(xₖ₊₁, (ns+nα+1):(ns+nα+nr))
-
-    inequality_constraint_interstep!(process.input_dynamics, r, uₖ, t, uₖ₊₁)
+    inequality_constraint!(process.input_dynamics, r, rₖ, uₖ, t)
 end
 
 function total_build_constraint!(process::Process{ID,TD,PD}, idx, r::AbstractVector{T}, xₖ, uₖ, xₖ₊₁, uₖ₊₁, Δt, t) where {T,ID,TD,PD}
-    Nx, Neq, Nineq, Nineq_inter = idx.Nstates, idx.Neq, idx.Nineq, idx.Nineq_inter
+    Nx, Neq, Nineq = idx.Nstates, idx.Neq, idx.Nineq
     r_colloc = view(r, 1:Nx)
     r_eq = view(r, (Nx+1):(Nx+Neq))
     r_ineq = view(r, (Nx+Neq+1):(Nx+Neq+Nineq))
-    r_ineq_inter = view(r, (Nx+Neq+Nineq+1):(Nx+Neq+Nineq+Nineq_inter))
 
     collocation_constraint!(process, r_colloc, xₖ, uₖ, xₖ₊₁, Δt, t)
     equality_constraint!(process, r_eq, xₖ, uₖ, t)
     inequality_constraint!(process, r_ineq, xₖ, uₖ, t)
-    inequality_interstep_constraint!(process, r_ineq_inter, xₖ, uₖ, xₖ₊₁, uₖ₊₁, Δt, t)
 end
 
 function total_cooling_constraint!(process::Process{ID,TD,PD}, idx, r::AbstractVector{T}, xₖ, xₖ₊₁, Δt, t) where {T,ID,TD,PD}
@@ -721,8 +702,8 @@ function optimize_trajectory(problem::AdditiveProblem;
     @time MOI.eval_hessian_lagrangian(problem, H0, z₀, 1.0, μ0)
 
     ncf = problem.final_constraint ? 2Nx : Nx
-    c_lb = repeat([zeros(Nx + Neq); ineq_min(id); ineq_inter_min(id)], Nkb)
-    c_ub = repeat([zeros(Nx + Neq); ineq_max(id); ineq_inter_max(id)], Nkb)
+    c_lb = repeat([zeros(Nx + Neq); ineq_min(id)], Nkb)
+    c_ub = repeat([zeros(Nx + Neq); ineq_max(id)], Nkb)
     c_lc = repeat(zeros(Nx), Nkc - 1)
     c_uc = repeat(zeros(Nx), Nkc - 1)
 
