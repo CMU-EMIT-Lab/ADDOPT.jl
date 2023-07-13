@@ -95,6 +95,7 @@ function dynamics_function!(td::VoxelEnergyFillDynamics, ds::AbstractVector{Ty},
     Kⱼ = view(rcK, :, :, 2:nz)
     dEᵢ .+= (k / (l^2 * ρ * cₚ)) .* (Eⱼ .* xᵢ .- Eᵢ .* xⱼ)
     dxᵢ .+= μ.(xⱼ) .- μ.(xᵢ)
+    dEᵢ .+= μ.(xⱼ) .* Eⱼ .- μ.(xᵢ) .* Eᵢ
     Cᵢ .-= xⱼ
 
     # From bottom
@@ -110,6 +111,7 @@ function dynamics_function!(td::VoxelEnergyFillDynamics, ds::AbstractVector{Ty},
     Kⱼ = view(rcK, :, :, 1:(nz-1))
     dEᵢ .+= (k / (l^2 * ρ * cₚ)) .* (Eⱼ .* xᵢ .- Eᵢ .* xⱼ)
     dxᵢ .+= μ.(xⱼ) .- μ.(xᵢ)
+    dEᵢ .+= μ.(xⱼ) .* Eⱼ .- μ.(xᵢ) .* Eᵢ
     Cᵢ .-= xⱼ
 
     # From in
@@ -125,6 +127,7 @@ function dynamics_function!(td::VoxelEnergyFillDynamics, ds::AbstractVector{Ty},
     Kⱼ = view(rcK, :, 1:(ny-1), :)
     dEᵢ .+= (k / (l^2 * ρ * cₚ)) .* (Eⱼ .* xᵢ .- Eᵢ .* xⱼ)
     dxᵢ .+= μ.(xⱼ) .- μ.(xᵢ)
+    dEᵢ .+= μ.(xⱼ) .* Eⱼ .- μ.(xᵢ) .* Eᵢ
     Cᵢ .-= xⱼ
 
     # From out
@@ -140,6 +143,7 @@ function dynamics_function!(td::VoxelEnergyFillDynamics, ds::AbstractVector{Ty},
     Kⱼ = view(rcK, :, 2:ny, :)
     dEᵢ .+= (k / (l^2 * ρ * cₚ)) .* (Eⱼ .* xᵢ .- Eᵢ .* xⱼ)
     dxᵢ .+= μ.(xⱼ) .- μ.(xᵢ)
+    dEᵢ .+= μ.(xⱼ) .* Eⱼ .- μ.(xᵢ) .* Eᵢ
     Cᵢ .-= xⱼ
 
     # From left
@@ -155,6 +159,7 @@ function dynamics_function!(td::VoxelEnergyFillDynamics, ds::AbstractVector{Ty},
     Kⱼ = view(rcK, 1:(nx-1), :, :)
     dEᵢ .+= (k / (l^2 * ρ * cₚ)) .* (Eⱼ .* xᵢ .- Eᵢ .* xⱼ)
     dxᵢ .+= μ.(xⱼ) .- μ.(xᵢ)
+    dEᵢ .+= μ.(xⱼ) .* Eⱼ .- μ.(xᵢ) .* Eᵢ
     Cᵢ .-= xⱼ
 
     # From right
@@ -170,6 +175,7 @@ function dynamics_function!(td::VoxelEnergyFillDynamics, ds::AbstractVector{Ty},
     Kⱼ = view(rcK, 2:nx, :, :)
     dEᵢ .+= (k / (l^2 * ρ * cₚ)) .* (Eⱼ .* xᵢ .- Eᵢ .* xⱼ)
     dxᵢ .+= μ.(xⱼ) .- μ.(xᵢ)
+    dEᵢ .+= μ.(xⱼ) .* Eⱼ .- μ.(xᵢ) .* Eᵢ
     Cᵢ .-= xⱼ
 
     dE .+= h∞ .* C .* (T∞ .* x .* l^2 .- E ./ (ρ * l * cₚ)) # Convection to environment
@@ -187,5 +193,5 @@ function temperature!(td::VoxelEnergyFillDynamics, T, s)
     E = view(s, 1:N)
     x = view(s, (N+1):2N)
 
-    T .= E ./ (td.l^3 * td.ρ * td.cₚ * x)
+    T .= E ./ (td.l^3 * td.ρ * td.cₚ) + (1 .- x) .* 293.15
 end
