@@ -39,7 +39,7 @@ using ProgressMeter
 
 
 # f!(dx, x, u)
-function solve_RK4(f!, x₀, U, dt, Nk)
+function solve_RK4(f!, x₀, U, dt, Nk, t₀)
     Nx = length(x₀)
     X = [zeros(Nx) for k in 1:Nk]
     X[1] .= x₀
@@ -47,7 +47,7 @@ function solve_RK4(f!, x₀, U, dt, Nk)
     x₁, x₂, x₃, x₄ = zeros(Nx), zeros(Nx), zeros(Nx), zeros(Nx)
 
     # try
-    t = 0.0
+    t = t₀
     p = Progress(Nk - 1)
     # @showprogress 0.5 "Simulating..." 
     for i in 1:(Nk-1)
