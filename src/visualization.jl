@@ -53,8 +53,6 @@ function animate_3Dmeasurement_history_planar(Y, X, dt, nx, ny, nz; path="animat
 
         xk = reshape(xk, (nx, ny, nz))
         T_arr = reshape(Tk, (nx, ny, nz))
-        T_arr[findall(isnan, T_arr)] .= 295.0
-        T_arr[xk .< 0.05] .= 295.0
         T_arr = sum(T_arr.*xk, dims=2) ./ sum(xk, dims=2)
         T_arr = reshape(T_arr, (nx, nz))'
         reverse!(T_arr, dims=2)
