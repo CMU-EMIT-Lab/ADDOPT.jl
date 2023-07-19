@@ -27,23 +27,25 @@ struct GMAWDynamicsPrescribed <: InputDynamics
     rₚ::Float64
     rₘ::Float64
 
-    x̄::Interpolations.Extrapolation
-    ȳ::Interpolations.Extrapolation
-    z̄::Interpolations.Extrapolation
-    t̄::Vector{Float64}
+    # x̄::Interpolations.Extrapolation
+    # ȳ::Interpolations.Extrapolation
+    # z̄::Interpolations.Extrapolation
+    # t̄::Vector{Float64}
+    p̄::Vector{Vector{Float64}}
 
     Fp_cache::Dict{DataType,Any}
     Fm_cache::Dict{DataType,Any}
 
-    function GMAWDynamicsPrescribed(nx, ny, nz, l, xₙ, yₙ, zₙ, ρ, cₚ, T∞, Tₗ, wire_diam, h∞, h₀, hₐᵣ, η, rₚ, rₘ, p̄, t̄)
+    function GMAWDynamicsPrescribed(nx, ny, nz, l, xₙ, yₙ, zₙ, ρ, cₚ, T∞, Tₗ, wire_diam, h∞, h₀, hₐᵣ, η, rₚ, rₘ, p̄)#, t̄)
         Fp = Dict{DataType,Any}()
         Fm = Dict{DataType,Any}()
 
-        x̄ = linear_interpolation(t̄, [p[1] for p in p̄], extrapolation_bc=Flat())
-        ȳ = linear_interpolation(t̄, [p[2] for p in p̄], extrapolation_bc=Flat())
-        z̄ = linear_interpolation(t̄, [p[3] for p in p̄], extrapolation_bc=Flat())
+        # x̄ = linear_interpolation(t̄, [p[1] for p in p̄], extrapolation_bc=Flat())
+        # ȳ = linear_interpolation(t̄, [p[2] for p in p̄], extrapolation_bc=Flat())
+        # z̄ = linear_interpolation(t̄, [p[3] for p in p̄], extrapolation_bc=Flat())
 
-        return new(nx, ny, nz, l, xₙ, yₙ, zₙ, ρ, cₚ, T∞, Tₗ, wire_diam, h∞, h₀, hₐᵣ, η, rₚ, rₘ, x̄, ȳ, z̄, t̄, Fp, Fm)
+        # return new(nx, ny, nz, l, xₙ, yₙ, zₙ, ρ, cₚ, T∞, Tₗ, wire_diam, h∞, h₀, hₐᵣ, η, rₚ, rₘ, x̄, ȳ, z̄, t̄, Fp, Fm)
+        return new(nx, ny, nz, l, xₙ, yₙ, zₙ, ρ, cₚ, T∞, Tₗ, wire_diam, h∞, h₀, hₐᵣ, η, rₚ, rₘ, p̄, Fp, Fm)
     end
 end
 
@@ -57,11 +59,11 @@ input_idle(id::GMAWDynamicsPrescribed) = [0.0]
 state_min(id::GMAWDynamicsPrescribed) = []
 state_max(id::GMAWDynamicsPrescribed) = []
 
-function dynamics_function!(id::GMAWDynamicsPrescribed, dr::AbstractVector{Ty}, s, r, u, t) where {Ty}
+function dynamics_function!(id::GMAWDynamicsPrescribed, dr::AbstractVector{Ty}, s, r, u, t, zi) where {Ty}
 
 end
 
-function input_function!(id::GMAWDynamicsPrescribed, ds::AbstractVector{Ty}, r, u, t) where {Ty}
+function input_function!(id::GMAWDynamicsPrescribed, ds::AbstractVector{Ty}, r, u, t, zi) where {Ty}
     N = length(ds) ÷ 2
     dE = view(ds, 1:N)
     dx = view(ds, (N+1):2N)
@@ -71,9 +73,12 @@ function input_function!(id::GMAWDynamicsPrescribed, ds::AbstractVector{Ty}, r, 
     ρ, cₚ, T∞, wire_diam = id.ρ, id.cₚ, id.T∞, id.wire_diam
     h∞, h₀, hₐᵣ, η, rₚ, rₘ = id.h∞, id.h₀, id.hₐᵣ, id.η, id.rₚ, id.rₘ
 
-    xₜ::Float64 = typeof(t) == Symbolics.Num ? l : id.x̄(t)
-    yₜ::Float64 = typeof(t) == Symbolics.Num ? l : id.ȳ(t)
-    zₜ::Float64 = typeof(t) == Symbolics.Num ? l : id.z̄(t)
+    # xₜ::Float64 = typeof(t) == Symbolics.Num ? l : id.x̄(t)
+    # yₜ::Float64 = typeof(t) == Symbolics.Num ? l : id.ȳ(t)
+    # zₜ::Float64 = typeof(t) == Symbolics.Num ? l : id.z̄(t)
+    xₜ = id.p̄[zi][1]
+    yₜ = id.p̄[zi][2]
+    zₜ = id.p̄[zi][3]    
 
     Fp = get!(id.Fp_cache, Ty) do
         zeros(Ty, nx * ny * nz)

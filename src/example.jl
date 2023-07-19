@@ -32,7 +32,7 @@ y = [X[i][2] for i in 1:Nt]
 P = [U[i][1] for i in 1:Nt]
 
 if isnothing(problem.Δtb)
-    t = cumsum([Δt[1][i] for i in 1:Nk])
+    t = cumsum(Δt)
 else
     t = (1:Nt) .* problem.Δtb
 end

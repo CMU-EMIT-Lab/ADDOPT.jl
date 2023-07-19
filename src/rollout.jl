@@ -39,7 +39,7 @@ using ProgressMeter
 
 
 # f!(dx, x, u)
-function solve_RK4(f!, x₀, U, dt, Nk, t₀)
+function solve_RK4(f!, x₀, U, dt, Nk, t₀, zi)
     Nx = length(x₀)
     X = [zeros(Nx) for k in 1:Nk]
     X[1] .= x₀
@@ -55,16 +55,16 @@ function solve_RK4(f!, x₀, U, dt, Nk, t₀)
         Ui = U[i]
 
         x₁ .= Xi
-        f!(k₁, x₁, Ui, t)
+        f!(k₁, x₁, Ui, t, zi+i)
 
         @. x₂ = Xi + k₁ * dt / 2
-        f!(k₂, x₂, Ui, t)
+        f!(k₂, x₂, Ui, t, zi+i)
 
         @. x₃ = Xi + k₂ * dt / 2
-        f!(k₃, x₃, Ui, t)
+        f!(k₃, x₃, Ui, t, zi+i)
 
         @. x₄ = Xi + k₃ * dt
-        f!(k₄, x₄, Ui, t)
+        f!(k₄, x₄, Ui, t, zi+i)
 
         @. X[i+1] = Xi + (1 / 6) * (k₁ + 2k₂ + 2k₃ + k₄) * dt
         next!(p)
@@ -79,23 +79,23 @@ function solve_RK4(f!, x₀, U, dt, Nk, t₀)
     return X
 end
 
-function step_RK4(f!, Xi, u, dt, t)
+function step_RK4(f!, Xi, u, dt, t, zi)
     Nx = length(Xi)
     k₁, k₂, k₃, k₄ = zeros(Nx), zeros(Nx), zeros(Nx), zeros(Nx)
     x₁, x₂, x₃, x₄ = zeros(Nx), zeros(Nx), zeros(Nx), zeros(Nx)
     Xf = zeros(Nx)
 
     x₁ .= Xi
-    f!(k₁, x₁, u, t)
+    f!(k₁, x₁, u, t, zi)
 
     @. x₂ = Xi + k₁ * dt / 2
-    f!(k₂, x₂, u, t + dt / 2)
+    f!(k₂, x₂, u, t + dt / 2, zi)
 
     @. x₃ = Xi + k₂ * dt / 2
-    f!(k₃, x₃, u, t + dt / 2)
+    f!(k₃, x₃, u, t + dt / 2, zi)
 
     @. x₄ = Xi + k₃ * dt
-    f!(k₄, x₄, u, t + dt)
+    f!(k₄, x₄, u, t + dt, zi)
 
     @. Xf = Xi + (1 / 6) * (k₁ + 2k₂ + 2k₃ + k₄) * dt
 

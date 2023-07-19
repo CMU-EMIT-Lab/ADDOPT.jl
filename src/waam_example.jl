@@ -23,7 +23,7 @@ wire_diam = 0.001143 # m, aka 0.045in
 Tₗ = 1784.0 # K, liquidus
 
 nx = 10
-ny = 6
+ny = 5
 nz = 3
 nvox = nz * ny * nx
 
@@ -38,11 +38,11 @@ t̄ = [0.0; 1.8]
 process = WAAMPrescribedMotion(nx, ny, nz, l, k, ρ, cₚ, T∞, T₀, wire_diam, h∞, h₀, hₐᵣ, η, Tmin, Tmax, p̄, t̄)
 
 xdist = zeros(nx, ny, nz)
-xdist[:, 2:5, 1:3] .= 1
+xdist[:, 2:4, 1:3] .= 1
 xdist = reshape(xdist, (nvox))
 
 Q = Diagonal([1e-5 * ones(nvox); 1e0 * ones(nvox)]) #1e4 mass in kg
-R = Diagonal(1e-2 * ones(1))
+R = Diagonal(0.0 * ones(1))#1e-2
 Qf = 10 * Q
 x₀ = zeros(2nvox)
 x̄ = [(l^3 * ρ * cₚ) * T∞ * xdist; xdist]
@@ -60,7 +60,7 @@ z₀ = generate_wall_z₀(process, problem.idx, x₀, Δtb, Δtc; free_time=fals
 X = vcat([[z₀[problem.idx.x[c][k]] for k in 1:(Nkb+Nkc)] for c in 1:Nc]...)
 U = vcat([[z₀[problem.idx.u[c][k]] for k in 1:Nkb] for c in 1:Nc]...)
  
-# animate_3Dstate_history_planar(X, Δtb, nx, ny, nz; path="animation_state3d3.mp4", strid=2)
+animate_3Dstate_history_planar(X, Δtb, nx, ny, nz; path="animation_state3d4.mp4", strid=2)
 
 function temperature(X, N)
     s = @view X[1:2N]
@@ -71,13 +71,15 @@ function temperature(X, N)
 end
 
 Y = [temperature(X[k], nvox) for k in 1:length(X)]
-# animate_3Dmeasurement_history_planar(Y, X, Δtb, nx, ny, nz; path="animation_measured3d3.mp4", strid=2)
+animate_3Dmeasurement_history_planar(Y, X, Δtb, nx, ny, nz; path="animation_measured3d4.mp4", strid=2)
 
 z, X, U, Δt = optimize_trajectory(problem; max_iter=10_000, c_tol=1.0e-5, xg=x₀, ug=[0.0677]) #c_tol=1.0e-6
 Y = [temperature(X[k], nvox) for k in 1:length(X)]
 
-animate_3Dstate_history_planar(X, Δtb, nx, ny, nz; path="animation_state3d3_optimized.mp4", strid=2)
-animate_3Dmeasurement_history_planar(Y, X, Δtb, nx, ny, nz; path="animation_measured3d3_optimized.mp4", strid=2)
+animate_3Dstate_history_planar(X, Δtb, nx, ny, nz; path="animation_state3d4_optimized.mp4", strid=2)
+animate_3Dmeasurement_history_planar(Y, X, Δtb, nx, ny, nz; path="animation_measured3d4_optimized.mp4", strid=2)
 
-save_object("traj_waam3d3_prescribed.jld2", z)
+save_object("traj_waam3d4_prescribed.jld2", z)
 # for no. 3, loosened constraint tolerance to e-5 from e-6, doubled time step size, ma97
+
+plot([u[1] for u in U])

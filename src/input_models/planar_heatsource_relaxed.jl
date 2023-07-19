@@ -69,7 +69,7 @@ function input_function!(id::PlanarHeatsourceDynamics, ds::AbstractVector{Ty}, r
     @. dT += P / (ρ * l^3 * cₚ)
 end
 
-function equality_constraint!(id::PlanarHeatsourceDynamics, c::AbstractVector{Ty}, r, u, t) where {Ty}
+function equality_constraint!(id::PlanarHeatsourceDynamics, c::AbstractVector{Ty}, r, u, t, zi) where {Ty}
     l, xₙ, zₙ, σ = id.l, id.xₙ, id.zₙ, id.σ
     nvox = id.nrows * id.ncols
     P = view(u, 1:nvox)
@@ -81,7 +81,7 @@ function equality_constraint!(id::PlanarHeatsourceDynamics, c::AbstractVector{Ty
     c[3] = 0.5 * dot(P, id.Qc, P)
 end
 
-function inequality_constraint!(id::PlanarHeatsourceDynamics, c::AbstractVector{Ty}, r, u, t) where {Ty}
+function inequality_constraint!(id::PlanarHeatsourceDynamics, c::AbstractVector{Ty}, r, u, t, zi) where {Ty}
     l, xₙ, zₙ, σ = id.l, id.xₙ, id.zₙ, id.σ
     nvox = id.nrows * id.ncols
     P = view(u, 1:nvox)

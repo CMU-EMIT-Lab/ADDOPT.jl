@@ -39,11 +39,11 @@ input_idle(id::PlanarHeatsourcePrescribedMotionDynamics) = [0.0]
 state_min(id::PlanarHeatsourcePrescribedMotionDynamics) = []
 state_max(id::PlanarHeatsourcePrescribedMotionDynamics) = []
 
-function dynamics_function!(id::PlanarHeatsourcePrescribedMotionDynamics, dr::AbstractVector{Ty}, s, r, u, t) where {Ty}
+function dynamics_function!(id::PlanarHeatsourcePrescribedMotionDynamics, dr::AbstractVector{Ty}, s, r, u, t, zi) where {Ty}
 
 end
 
-function input_function!(id::PlanarHeatsourcePrescribedMotionDynamics, ds::AbstractVector{Ty}, r, u, t) where {Ty}
+function input_function!(id::PlanarHeatsourcePrescribedMotionDynamics, ds::AbstractVector{Ty}, r, u, t, zi) where {Ty}
     dT = ds
     n_rows, n_cols = id.nrows, id.ncols
     P = u[1]

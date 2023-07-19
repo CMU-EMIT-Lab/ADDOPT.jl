@@ -32,6 +32,14 @@ function Furnace(Pₘₐₓ, T∞, Tₘₐₓ, h, m, cₚ)
     return Process(id, td, pd)
 end
 
+function FurnaceSimple(Pₘₐₓ, T∞, Tₘₐₓ, h, m, cₚ)
+    id = UniformPowerDynamics(Pₘₐₓ, m, cₚ)
+    td = NewtonLumpedDynamics(h, T∞, m, cₚ, Tₘₐₓ)
+    pd = NullPropertyDynamics()
+
+    return Process(id, td, pd)
+end
+
 function row_col(n_rows, n_cols, index)
     row = (index - 1) ÷ n_cols + 1
     col = mod(index, 1:n_cols)
@@ -63,13 +71,25 @@ function gen_xyz(nx, ny, nz, l)
     return x, y, z
 end
 
-function WAAMPrescribedMotion(nx, ny, nz, l, k, ρ, cₚ, T∞, T₀, wire_diam, h∞, h₀, hₐᵣ, η, Tmin, Tmax, p̄, t̄)
+function WAAMPrescribedMotion(nx, ny, nz, l, k, ρ, cₚ, T∞, T₀, wire_diam, h∞, h₀, hₐᵣ, η, Tmin, Tmax, p̄)#, t̄)
     xₙ, yₙ, zₙ = gen_xyz(nx, ny, nz, l)
     Tₗ = 1700.0 # K
 
-    id = GMAWDynamicsPrescribed(nx, ny, nz, l, xₙ, yₙ, zₙ, ρ, cₚ, T∞, Tₗ, wire_diam, h∞, h₀, hₐᵣ, η, wire_diam, wire_diam, p̄, t̄)
+    id = GMAWDynamicsPrescribed(nx, ny, nz, l, xₙ, yₙ, zₙ, ρ, cₚ, T∞, Tₗ, wire_diam, h∞, h₀, hₐᵣ, η, wire_diam, wire_diam, p̄)#, t̄)
     td = VoxelEnergyFillDynamics(nx, ny, nz, l, xₙ, yₙ, zₙ, k, ρ, cₚ, T∞, T₀, wire_diam, h∞, h₀, Tmin, Tmax)
     pd = NullPropertyDynamics()
+
+    return Process(id, td, pd)
+end
+
+function WAAMHardnessPrescribedMotion(nx, ny, nz, l, k, ρ, cₚ, T∞, T₀, wire_diam, h∞, h₀, hₐᵣ, η, Tmin, Tmax, p̄, A, τ)
+    xₙ, yₙ, zₙ = gen_xyz(nx, ny, nz, l)
+    n_voxels = nx * ny * nz
+    Tₗ = 1700.0 # K
+
+    id = GMAWDynamicsPrescribed(nx, ny, nz, l, xₙ, yₙ, zₙ, ρ, cₚ, T∞, Tₗ, wire_diam, h∞, h₀, hₐᵣ, η, wire_diam, wire_diam, p̄)
+    td = VoxelEnergyFillDynamics(nx, ny, nz, l, xₙ, yₙ, zₙ, k, ρ, cₚ, T∞, T₀, wire_diam, h∞, h₀, Tmin, Tmax)
+    pd = HardnessDynamics(A, τ, n=n_voxels)
 
     return Process(id, td, pd)
 end

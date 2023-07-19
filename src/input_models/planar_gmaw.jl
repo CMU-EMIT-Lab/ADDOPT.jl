@@ -45,7 +45,7 @@ input_idle(id::PlanarGMAWDynamics) = [0.0; 0.0; 0.0; 0.0]
 state_min(id::PlanarGMAWDynamics) = [0.0; 0.0; id.l; 0.0]
 state_max(id::PlanarGMAWDynamics) = [(id.ncols+1)*id.l; (id.nrows+1)*id.l; id.l*10; (id.nrows+1)*id.l]
 
-function dynamics_function!(id::PlanarGMAWDynamics, dr::AbstractVector{Ty}, s, r, u, t) where {Ty}
+function dynamics_function!(id::PlanarGMAWDynamics, dr::AbstractVector{Ty}, s, r, u, t, zi) where {Ty}
     N = length(s) ÷ 2
     E = view(s, 1:N)
     m = view(s, (N+1):2N)
@@ -82,7 +82,7 @@ function dynamics_function!(id::PlanarGMAWDynamics, dr::AbstractVector{Ty}, s, r
     dr[4] = γₕ * (z̄ₘₚ - zₘₚ)
 end
 
-function input_function!(id::PlanarGMAWDynamics, ds::AbstractVector{Ty}, r, u, t) where {Ty}
+function input_function!(id::PlanarGMAWDynamics, ds::AbstractVector{Ty}, r, u, t, zi) where {Ty}
     N = length(ds) ÷ 2
     dE = view(ds, 1:N)
     dm = view(ds, (N+1):2N)

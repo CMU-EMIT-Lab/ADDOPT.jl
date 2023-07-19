@@ -32,7 +32,7 @@ input_idle(id::PlanarHeatsourceDynamics) = [0.0; 0.0; 0.0]
 state_min(id::PlanarHeatsourceDynamics) = [0.0; 0.0]
 state_max(id::PlanarHeatsourceDynamics) = [(id.ncols+1)*id.l; (id.nrows+1)*id.l]
 
-function dynamics_function!(id::PlanarHeatsourceDynamics, dr::AbstractVector{Ty}, s, r, u, t) where {Ty}
+function dynamics_function!(id::PlanarHeatsourceDynamics, dr::AbstractVector{Ty}, s, r, u, t, zi) where {Ty}
     n_rows, n_cols = id.nrows, id.ncols
     xₜ, zₜ = r[1], r[2]
     vx, vz, P = u[1], u[2], u[3]
@@ -42,7 +42,7 @@ function dynamics_function!(id::PlanarHeatsourceDynamics, dr::AbstractVector{Ty}
     dr[2] = vz
 end
 
-function input_function!(id::PlanarHeatsourceDynamics, ds::AbstractVector{Ty}, r, u, t) where {Ty}
+function input_function!(id::PlanarHeatsourceDynamics, ds::AbstractVector{Ty}, r, u, t, zi) where {Ty}
     dT = ds
     n_rows, n_cols = id.nrows, id.ncols
     xₜ, zₜ = r[1], r[2]
