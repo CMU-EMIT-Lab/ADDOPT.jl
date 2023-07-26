@@ -99,19 +99,22 @@ function marshall_z(idx, X, U, Δtb, Δtc; free_time=false)
     z = zeros(Nz)
 
     for c in 1:Nc
-        # z[idx.tc[c]] = tc[c]
 
         for k in 1:Nkb
             z[idx.x[c][k]] .= X[c][k]
             z[idx.u[c][k]] .= U[c][k]
 
-            # if free_time
-            #     z[idx.Δt[c][k]] = Δt
-            # end
+            if free_time
+                z[idx.Δtb[c][k]] = Δtb
+            end
         end
 
         for k in (Nkb+1):(Nkb+Nkc)
             z[idx.x[c][k]] .= X[c][k]
+
+            if free_time
+                z[idx.Δtc[c][k]] = Δtc
+            end
         end
     end
 

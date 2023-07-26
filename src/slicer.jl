@@ -65,6 +65,7 @@ function gen_objective_weights(fill_ref)
 
     for k in Nkb:-1:1
         temp_weights .= 0.0
+        temp_weights[(fill_ref[Nkb].>0)] .= 1e0
         temp_weights[(fill_ref[Nkb].==fill_ref[k]).&&(fill_ref[Nkb].>0)] .= 1e2
 
         QRs[k] = Diagonal(temp_weights)
