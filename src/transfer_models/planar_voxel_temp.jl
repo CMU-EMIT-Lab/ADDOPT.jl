@@ -13,24 +13,27 @@ struct PlanarVoxelTemperatureDynamics <: TransferDynamics
 
     h∞::Float64
 
+    Tmax::Float64
+    Tmin::Float64
+
     # B_cache::Dict{DataType,Any}
     # C_cache::Dict{DataType,Any}
     K_cache::Dict{DataType,Any}
     # T_cache::Dict{DataType,Any}
 
-    function PlanarVoxelTemperatureDynamics(nrows, ncols, l, xₙ, zₙ, k, ρ, cₚ, T∞, h∞)
+    function PlanarVoxelTemperatureDynamics(nrows, ncols, l, xₙ, zₙ, k, ρ, cₚ, T∞, h∞, Tmax, Tmin)
         # B = Dict{DataType,Any}()
         # C = Dict{DataType,Any}()
         K = Dict{DataType,Any}()
         # T = Dict{DataType,Any}()
 
-        return new(nrows, ncols, l, xₙ, zₙ, k, ρ, cₚ, T∞, h∞, K)#, B, C, K, T)
+        return new(nrows, ncols, l, xₙ, zₙ, k, ρ, cₚ, T∞, h∞, Tmax, Tmin, K)#, B, C, K, T)
     end
 end
 
 @inline Ns(td::PlanarVoxelTemperatureDynamics)::Int = td.nrows * td.ncols
-state_min(td::PlanarVoxelTemperatureDynamics) = 10.0 * ones(Ns(td))
-state_max(td::PlanarVoxelTemperatureDynamics) = 1400.0 * ones(Ns(td)) #Inf * ones(Ns(td))
+state_min(td::PlanarVoxelTemperatureDynamics) = td.Tmin * ones(Ns(td))
+state_max(td::PlanarVoxelTemperatureDynamics) = td.Tmax * ones(Ns(td)) #Inf * ones(Ns(td))
 
 function dynamics_function!(td::PlanarVoxelTemperatureDynamics, ds::AbstractVector{Ty}, s, t) where {Ty}
     n_rows, n_cols = td.nrows, td.ncols
@@ -86,7 +89,7 @@ function dynamics_function!(td::PlanarVoxelTemperatureDynamics, ds::AbstractVect
     Kⱼ = view(rcK, 2:n_cols, :)
     dTᵢ .+= (1 / (ρ * (l^2) * cₚ)) .* ((Kᵢ .+ Kⱼ) ./ 2) .* (Tⱼ .- Tᵢ)
 
-    dT .+= (h∞ / (ρ *l* cₚ)) .* (T∞ .- T) # Convection to environment
+    dT .+= (h∞ / (ρ * l * cₚ)) .* (T∞ .- T) # Convection to environment
 end
 
 function temperature!(td::PlanarVoxelTemperatureDynamics, T, s)
