@@ -266,13 +266,15 @@ struct CoolingTrackingObjective <: Objective
     R::Float64
     Emax::Float64
     E∞::Float64
+    Qf::Diagonal{Float64,Vector{Float64}}
+    xf::Vector{Float64}
 end
 
 function Ē(o::CoolingTrackingObjective, t)
     if t > 0.0
         return (o.Emax - o.E∞) * exp(-t / o.R) + o.E∞
     else
-        return o.E∞
+        return 0.0#o.E∞
     end
 end
 
@@ -288,10 +290,12 @@ end
 function cost(o::CoolingTrackingObjective, z, idx)
     Nx, Nkb, Nkc, Nc, Nu = idx.Nstates, idx.Nkb, idx.Nkc, idx.Nc, idx.Nu
     Qxs, QRs, x̄ = o.Qxs, o.QRs, o.x̄
+    Qf, xf = o.Qf, o.xf
     R = o.R
     Nvox = Nx ÷ 2
 
     ex = zeros(eltype(z), Nvox)
+    exN = zeros(eltype(z), Nx)
     eR = zeros(eltype(z), Nvox)
     t = zeros(eltype(z), Nvox)
     final_fill = o.fill_ref[end]
@@ -311,8 +315,18 @@ function cost(o::CoolingTrackingObjective, z, idx)
             @. eR = Eₖ - Er(t)
 
             cost += 0.5 * (dot(ex, Qxs[zi], ex) + dot(eR, QRs[zi], eR))
+
+            if k > Nkb
+                xN = @view z[(idx.x[c][k])]
+                @. exN = xN - xf
+                cost += 1e-2 * 0.5 * dot(exN, Qf, exN)
+            end
         end
     end
+
+    xN = @view z[idx.x[Nc][Nkb+Nkc]]
+    @. exN = xN - xf
+    cost += 0.5 * dot(exN, Qf, exN)
 
     return cost
 end
@@ -320,10 +334,12 @@ end
 function gradient(o::CoolingTrackingObjective, grad, z, idx)
     Nx, Nkb, Nkc, Nc, Nu = idx.Nstates, idx.Nkb, idx.Nkc, idx.Nc, idx.Nu
     Qxs, QRs, x̄ = o.Qxs, o.QRs, o.x̄
+    Qf, xf = o.Qf, o.xf
     R = o.R
     Nvox = Nx ÷ 2
 
     ex = zeros(eltype(z), Nvox)
+    exN = zeros(eltype(z), Nx)
     eR = zeros(eltype(z), Nvox)
     t = zeros(eltype(z), Nvox)
     mask = zeros(eltype(z), Nvox)
@@ -353,16 +369,26 @@ function gradient(o::CoolingTrackingObjective, grad, z, idx)
                 mask .= 0
                 mask[j.==final_fill] .= 1
                 Δtjidx = j > Nkb ? (idx.Δtc[c][j]) : (idx.Δtb[c][j])
-                grad[Δtjidx] += dot(∂Er.(t), QRs[zi], eR.*mask)
+                grad[Δtjidx] += dot(∂Er.(t), QRs[zi], eR .* mask)
+            end
+
+            if k > Nkb
+                xN = @view z[(idx.x[c][k])]
+                @. exN = xN - xf
+                grad[idx.x[c][k]] .+= 1e-2 * Qf * exN
             end
         end
     end
 
+    xN = @view z[idx.x[Nc][Nkb+Nkc]]
+    @. exN = xN - xf
+    grad[idx.x[Nc][Nkb+Nkc]] .+= Qf * exN
 end
 
 function objective_hessian_structure(o::CoolingTrackingObjective, idx)
     Nx, Nkb, Nkc, Nc, Nu = idx.Nstates, idx.Nkb, idx.Nkc, idx.Nc, idx.Nu
     Qxs, QRs, x̄ = o.Qxs, o.QRs, o.x̄
+    Qf, xf = o.Qf, o.xf
     R = o.R
     Nvox = Nx ÷ 2
 
@@ -417,7 +443,7 @@ end
 function objective_hessian_values(o::CoolingTrackingObjective, idx, H, z)
     Nx, Nkb, Nkc, Nc, Nu = idx.Nstates, idx.Nkb, idx.Nkc, idx.Nc, idx.Nu
     Qxs, QRs, x̄ = o.Qxs, o.QRs, o.x̄
-    Qf, xg = o.Qf, o.xg
+    Qf, xf = o.Qf, o.xf
     R = o.R
     Nvox = Nx ÷ 2
 
@@ -469,7 +495,7 @@ end
 struct QuadraticCubicObjective <: Objective
     Nvox::Int
     C::Vector{Float64}
-    Q::Diagonal{Float64, Vector{Float64}}
+    Q::Diagonal{Float64,Vector{Float64}}
     T̄::Vector{Float64}
     ȳ::Vector{Float64}
 end
@@ -513,7 +539,7 @@ function gradient(o::QuadraticCubicObjective, grad, z, idx)
             @. eT = Tₖ - T̄
             clamp!(eT, 0.0, Inf)
             eT .^= 2
-            
+
             @. ey = yₖ - ȳ
 
             grad[idx.x[c][k][1:Nvox]] .= 3 .* C .* eT

@@ -64,11 +64,11 @@ function gen_objective_weights(fill_ref)
     temp_weights = zeros(Nvox)
 
     for k in Nkb:-1:1
-        temp_weights .= 0.0
-        temp_weights[(fill_ref[Nkb].>0)] .= 1e0
-        temp_weights[(fill_ref[Nkb].==fill_ref[k]).&&(fill_ref[Nkb].>0)] .= 1e2
+        temp_weights .= 1e-1
+        temp_weights[(fill_ref[Nkb].>0)] .= 1e-1
+        temp_weights[(fill_ref[Nkb].==fill_ref[k]).&&(fill_ref[Nkb].>0)] .= 1e1
 
-        QRs[k] = Diagonal(temp_weights)
+        QRs[k][diagind(QRs[k])] .= temp_weights
     end
 
     return QRs
@@ -127,7 +127,7 @@ function gen_exponential(y, Th, T∞, A, τ)
 
     for k in 1:1000
         ŷ = y - frac(R)
-        dŷ = ForwardDiff.derivative(R -> y-frac(R), R)
+        dŷ = ForwardDiff.derivative(R -> y - frac(R), R)
         ΔR = -ŷ / dŷ
         R += ΔR
 
