@@ -29,15 +29,15 @@ struct PlanarVoxelMassEnergyDynamics <: TransferDynamics
     Tmin::Float64
     Tmax::Float64
 
-    C_cache::Dict{DataType,Any}
-    K_cache::Dict{DataType,Any}
+    C_cache::Dict{Tuple{DataType, Int},Any}
+    K_cache::Dict{Tuple{DataType, Int},Any}
 
     # A::Vector{Float64}
     B::Vector{Float64}
 
     function PlanarVoxelMassEnergyDynamics(nrows, ncols, l, w, xₙ, zₙ, kₘ, kₐ, ρₘ, ρₐ, cₚₘ, cₚₐ, T∞, T₀, wire_diam, h∞, h₀, Tmin, Tmax)
-        C = Dict{DataType,Any}()
-        K = Dict{DataType,Any}()
+        C = Dict{Tuple{DataType, Int},Any}()
+        K = Dict{Tuple{DataType, Int},Any}()
 
         # A = 2l^2 * ones(nrows * ncols)
         B = vcat(ones(ncols), zeros((nrows - 1) * ncols))
@@ -59,10 +59,11 @@ function dynamics_function!(td::PlanarVoxelMassEnergyDynamics, ds::AbstractVecto
     k = td.kₘ
     ρ, cₚ = td.ρₘ, td.cₚₘ
 
-    C = get!(td.C_cache, Ty) do
+    thread::Int = Threads.threadid()
+    C = get!(td.C_cache, (Ty, thread)) do
         zeros(Ty, nrows * ncols)
     end::Vector{Ty}
-    K = get!(td.K_cache, Ty) do
+    K = get!(td.K_cache, (Ty, thread)) do
         zeros(Ty, nrows * ncols)
     end::Vector{Ty}
 

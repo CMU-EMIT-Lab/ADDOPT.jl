@@ -24,12 +24,12 @@ struct PlanarGMAWDynamics <: InputDynamics
     wₓ::Float64
     bₕ::Float64
 
-    F_cache::Dict{DataType,Any}
-    ZW_cache::Dict{DataType,Any}
+    F_cache::Dict{Tuple{DataType, Int},Any}
+    ZW_cache::Dict{Tuple{DataType, Int},Any}
 
     function PlanarGMAWDynamics(nrows, ncols, l, xₙ, zₙ, k, ρ, cₚ, T∞, Tₗ, wire_diam, h∞, h₀, hₐᵣ, η, γᵣ, γₕ, wₓ, bₕ)
-        F = Dict{DataType,Any}()
-        ZW = Dict{DataType,Any}()
+        F = Dict{Tuple{DataType, Int},Any}()
+        ZW = Dict{Tuple{DataType, Int},Any}()
 
         return new(nrows, ncols, l, xₙ, zₙ, k, ρ, cₚ, T∞, Tₗ, wire_diam, h∞, h₀, hₐᵣ, η, γᵣ, γₕ, wₓ, bₕ, F, ZW)
     end
@@ -39,11 +39,11 @@ Nu(id::PlanarGMAWDynamics)::Int = 4 # vx, vz, trim, WFS (m/s for speeds)
 Nr(id::PlanarGMAWDynamics)::Int = 4 # torch position (x,z), meltpool radius, meltpool root (z) (m)
 
 input_min(id::PlanarGMAWDynamics) = [-0.01; 0.0; 0.5; 0.001] # vx, vz, trim, WFS (m/s for speeds) # second gausshess constrained vx to 10 mm/s
-input_max(id::PlanarGMAWDynamics) = [0.01; (id.nrows+1)*id.l; 1.2; 0.1]
+input_max(id::PlanarGMAWDynamics) = [0.01; (id.nrows + 1) * id.l; 1.2; 0.1]
 input_idle(id::PlanarGMAWDynamics) = [0.0; 0.0; 0.0; 0.0]
 
 state_min(id::PlanarGMAWDynamics) = [0.0; 0.0; id.l; 0.0]
-state_max(id::PlanarGMAWDynamics) = [(id.ncols+1)*id.l; (id.nrows+1)*id.l; id.l*10; (id.nrows+1)*id.l]
+state_max(id::PlanarGMAWDynamics) = [(id.ncols + 1) * id.l; (id.nrows + 1) * id.l; id.l * 10; (id.nrows + 1) * id.l]
 
 function dynamics_function!(id::PlanarGMAWDynamics, dr::AbstractVector{Ty}, s, r, u, t, zi) where {Ty}
     N = length(s) ÷ 2
@@ -57,14 +57,15 @@ function dynamics_function!(id::PlanarGMAWDynamics, dr::AbstractVector{Ty}, s, r
     k, ρ, cₚ, T∞, Tₗ, wire_diam = id.k, id.ρ, id.cₚ, id.T∞, id.Tₗ, id.wire_diam
     h∞, h₀, hₐᵣ, η, γᵣ, γₕ, wₓ, bₕ = id.h∞, id.h₀, id.hₐᵣ, id.η, id.γᵣ, id.γₕ, id.wₓ, id.bₕ
 
-    ZW = get!(id.ZW_cache, Ty) do
+    thread::Int = Threads.threadid()
+    ZW = get!(id.ZW_cache, (Ty, thread)) do
         zeros(Ty, n_rows * n_cols)
     end::Vector{Ty}
 
     z̄ₘₚ = zₜ#zₘₚ
     # pow_n = 3
     # Compute steady state meltpool radius and z location
-    r̄ₘₚ = wire_diam * √((WFS + .001) / (TS + .001)) * √(1 / 2) #: wire_diam # (eltype(ZW) == Symbolics.Num) || (WFS > 0 && TS > 0) ? 
+    r̄ₘₚ = wire_diam * √((WFS + 0.001) / (TS + 0.001)) * √(1 / 2) #: wire_diam # (eltype(ZW) == Symbolics.Num) || (WFS > 0 && TS > 0) ? 
     # @. ZW = normpdf((xₙ - xₜ) / l * 2) * (1 - exp(-m / (ρ * l^2) * 2000)) * logistic(1000 * (Tₗ * m * cₚ - E)) * (zₙ / l)^pow_n
     # ZW_sum = sum(ZW) + 0.1#   #* max(sign(Tₗ * m * cₚ - E), 0) * exp((zₙ / l) * 10)
     # # if typeof(ZW_sum) == Symbolics.Num
@@ -77,7 +78,7 @@ function dynamics_function!(id::PlanarGMAWDynamics, dr::AbstractVector{Ty}, s, r
     # @show ZW_sum
 
     dr[1] = vx
-    dr[2] = 8 * (vz - zₜ) 
+    dr[2] = 8 * (vz - zₜ)
     dr[3] = γᵣ * (r̄ₘₚ - rₘₚ)
     dr[4] = γₕ * (z̄ₘₚ - zₘₚ)
 end
@@ -94,7 +95,8 @@ function input_function!(id::PlanarGMAWDynamics, ds::AbstractVector{Ty}, r, u, t
     k, ρ, cₚ, T∞, wire_diam = id.k, id.ρ, id.cₚ, id.T∞, id.wire_diam
     h∞, h₀, hₐᵣ, η, γᵣ, γₕ, wₓ, bₕ = id.h∞, id.h₀, id.hₐᵣ, id.η, id.γᵣ, id.γₕ, id.wₓ, id.bₕ
 
-    F = get!(id.F_cache, Ty) do
+    thread::Int = Threads.threadid()
+    F = get!(id.F_cache, (Ty, thread)) do
         zeros(Ty, n_rows * n_cols)
     end::Vector{Ty}
 
@@ -104,7 +106,7 @@ function input_function!(id::PlanarGMAWDynamics, ds::AbstractVector{Ty}, r, u, t
     ṁ = WFS * π * (wire_diam / 2)^2 * ρ # kg/s
     P = 29000 * WFS # W/(m/s) * (m/s)
 
-    @. F = (l^2 / (2π*(l/wₓ)*rₘₚ)) * exp(-((xₙ - xₜ)^2/(l/wₓ)^2 + (zₙ - zₘₚ)^2/rₘₚ^2)/2)
+    @. F = (l^2 / (2π * (l / wₓ) * rₘₚ)) * exp(-((xₙ - xₜ)^2 / (l / wₓ)^2 + (zₙ - zₘₚ)^2 / rₘₚ^2) / 2)
     # @. F = normpdf((xₙ - xₜ) / l * wₓ) * normpdf((zₙ - zₘₚ) / rₘₚ) #* logistic((zₙ - zₘₚ) / l + bₕ) 
     # @show sum(F)
 
@@ -122,9 +124,9 @@ function input_function!(id::PlanarGMAWDynamics, ds::AbstractVector{Ty}, r, u, t
     #     F .= 1
     # else
     # elseif sum(F) > 0
-        # F ./= sum(F) # Normalize for conservation purposes ###################
+    # F ./= sum(F) # Normalize for conservation purposes ###################
     # else
-        # F .= 0
+    # F .= 0
     # end
 
     # @show F

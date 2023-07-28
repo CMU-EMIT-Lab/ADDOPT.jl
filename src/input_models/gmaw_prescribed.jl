@@ -33,12 +33,12 @@ struct GMAWDynamicsPrescribed <: InputDynamics
     # t̄::Vector{Float64}
     p̄::Vector{Vector{Float64}}
 
-    Fp_cache::Dict{DataType,Any}
-    Fm_cache::Dict{DataType,Any}
+    Fp_cache::Dict{Tuple{DataType, Int},Any}
+    Fm_cache::Dict{Tuple{DataType, Int},Any}
 
     function GMAWDynamicsPrescribed(nx, ny, nz, l, xₙ, yₙ, zₙ, ρ, cₚ, T∞, Tₗ, wire_diam, h∞, h₀, hₐᵣ, η, rₚ, rₘ, p̄)#, t̄)
-        Fp = Dict{DataType,Any}()
-        Fm = Dict{DataType,Any}()
+        Fp = Dict{Tuple{DataType, Int},Any}()
+        Fm = Dict{Tuple{DataType, Int},Any}()
 
         # x̄ = linear_interpolation(t̄, [p[1] for p in p̄], extrapolation_bc=Flat())
         # ȳ = linear_interpolation(t̄, [p[2] for p in p̄], extrapolation_bc=Flat())
@@ -52,8 +52,8 @@ end
 Nu(id::GMAWDynamicsPrescribed)::Int = 1 # WFS (m/s for speeds)
 Nr(id::GMAWDynamicsPrescribed)::Int = 0
 
-input_min(id::GMAWDynamicsPrescribed) = [0.030] # vx, vz, trim, WFS (m/s for speeds) # second gausshess constrained vx to 10 mm/s
-input_max(id::GMAWDynamicsPrescribed) = [0.300]
+input_min(id::GMAWDynamicsPrescribed) = [0.025] # vx, vz, trim, WFS (m/s for speeds) # second gausshess constrained vx to 10 mm/s
+input_max(id::GMAWDynamicsPrescribed) = [0.100]
 input_idle(id::GMAWDynamicsPrescribed) = [0.0]
 
 state_min(id::GMAWDynamicsPrescribed) = []
@@ -78,13 +78,14 @@ function input_function!(id::GMAWDynamicsPrescribed, ds::AbstractVector{Ty}, r, 
     # zₜ::Float64 = typeof(t) == Symbolics.Num ? l : id.z̄(t)
     xₜ = id.p̄[zi][1]
     yₜ = id.p̄[zi][2]
-    zₜ = id.p̄[zi][3]    
+    zₜ = id.p̄[zi][3]
 
-    Fp = get!(id.Fp_cache, Ty) do
+    thread::Int = Threads.threadid()
+    Fp = get!(id.Fp_cache, (Ty, thread)) do
         zeros(Ty, nx * ny * nz)
     end::Vector{Ty}
 
-    Fm = get!(id.Fm_cache, Ty) do
+    Fm = get!(id.Fm_cache, (Ty, thread)) do
         zeros(Ty, nx * ny * nz)
     end::Vector{Ty}
 

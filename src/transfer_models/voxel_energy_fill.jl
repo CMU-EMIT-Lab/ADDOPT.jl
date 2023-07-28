@@ -26,14 +26,14 @@ struct VoxelEnergyFillDynamics <: TransferDynamics
     Tmin::Float64
     Tmax::Float64
 
-    C_cache::Dict{DataType,Any}
-    K_cache::Dict{DataType,Any}
+    C_cache::Dict{Tuple{DataType, Int},Any}
+    K_cache::Dict{Tuple{DataType, Int},Any}
 
     B::Vector{Float64}
 
     function VoxelEnergyFillDynamics(nx, ny, nz, l, xₙ, yₙ, zₙ, k, ρ, cₚ, T∞, T₀, wire_diam, h∞, h₀, Tmin, Tmax)
-        C = Dict{DataType,Any}()
-        K = Dict{DataType,Any}()
+        C = Dict{Tuple{DataType, Int},Any}()
+        K = Dict{Tuple{DataType, Int},Any}()
 
         B = zeros(nx, ny, nz)
         B[:, :, 1] .= 1
@@ -56,10 +56,11 @@ function dynamics_function!(td::VoxelEnergyFillDynamics, ds::AbstractVector{Ty},
     k = td.k
     ρ, cₚ = td.ρ, td.cₚ
 
-    C = get!(td.C_cache, Ty) do
+    thread::Int = Threads.threadid()
+    C = get!(td.C_cache, (Ty, thread)) do
         zeros(Ty, nz * ny * nx)
     end::Vector{Ty}
-    K = get!(td.K_cache, Ty) do
+    K = get!(td.K_cache, (Ty, thread)) do
         zeros(Ty, nz * ny * nx)
     end::Vector{Ty}
 

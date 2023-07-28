@@ -13,7 +13,7 @@ struct PlanarHeatsourcePrescribedMotionDynamics <: InputDynamics
     ρ::Float64
     cₚ::Float64
 
-    F_cache::Dict{DataType,Any}
+    F_cache::Dict{Tuple{DataType, Int},Any}
 
     xmin::Float64
     xmax::Float64
@@ -21,11 +21,11 @@ struct PlanarHeatsourcePrescribedMotionDynamics <: InputDynamics
     zmax::Float64
     tmin::Float64
     tmax::Float64
-        
+
     function PlanarHeatsourcePrescribedMotionDynamics(nrows, ncols, l, xₙ, zₙ, ρ, cₚ, σ, xmin, xmax, zmin, zmax, tmin, tmax)
-        F = Dict{DataType,Any}()
-    
-        return new(nrows, ncols, l, xₙ, zₙ, σ, ρ, cₚ, F,xmin, xmax, zmin, zmax, tmin, tmax)
+        F = Dict{Tuple{DataType, Int},Any}()
+
+        return new(nrows, ncols, l, xₙ, zₙ, σ, ρ, cₚ, F, xmin, xmax, zmin, zmax, tmin, tmax)
     end
 end
 
@@ -53,11 +53,12 @@ function input_function!(id::PlanarHeatsourcePrescribedMotionDynamics, ds::Abstr
     xₜ = clamp((xmax - xmin) / (tmax - tmin) * (t - tmin) + xmin, xmin, xmax)
     zₜ = clamp((zmax - zmin) / (tmax - tmin) * (t - tmin) + zmin, zmin, zmax)
 
-    F = get!(id.F_cache, Ty) do
+    thread::Int = Threads.threadid()
+    F = get!(id.F_cache, (Ty, thread)) do
         zeros(Ty, n_rows * n_cols)
     end::Vector{Ty}
 
-    @. F = (l^2 / (2π*σ^2)) * exp(-((xₙ - xₜ)^2 + (zₙ - zₜ)^2)/(2σ^2)) # Gaussian about heat source location
+    @. F = (l^2 / (2π * σ^2)) * exp(-((xₙ - xₜ)^2 + (zₙ - zₜ)^2) / (2σ^2)) # Gaussian about heat source location
 
     # if eltype(F) == Symbolics.Num
     #     F .= 1#@. F += xₜ + zₜ + P

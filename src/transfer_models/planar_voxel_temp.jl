@@ -16,16 +16,10 @@ struct PlanarVoxelTemperatureDynamics <: TransferDynamics
     Tmax::Float64
     Tmin::Float64
 
-    # B_cache::Dict{DataType,Any}
-    # C_cache::Dict{DataType,Any}
-    K_cache::Dict{DataType,Any}
-    # T_cache::Dict{DataType,Any}
+    K_cache::Dict{Tuple{DataType, Int},Any}
 
     function PlanarVoxelTemperatureDynamics(nrows, ncols, l, xₙ, zₙ, k, ρ, cₚ, T∞, h∞, Tmax, Tmin)
-        # B = Dict{DataType,Any}()
-        # C = Dict{DataType,Any}()
-        K = Dict{DataType,Any}()
-        # T = Dict{DataType,Any}()
+        K = Dict{Tuple{DataType, Int},Any}()
 
         return new(nrows, ncols, l, xₙ, zₙ, k, ρ, cₚ, T∞, h∞, Tmax, Tmin, K)#, B, C, K, T)
     end
@@ -41,7 +35,8 @@ function dynamics_function!(td::PlanarVoxelTemperatureDynamics, ds::AbstractVect
     k, ρ, cₚ, T∞ = td.k, td.ρ, td.cₚ, td.T∞
     h∞ = td.h∞
 
-    K = get!(td.K_cache, Ty) do
+    thread::Int = Threads.threadid()
+    K = get!(td.K_cache, (Ty, thread)) do
         zeros(Ty, n_rows * n_cols)
     end::Vector{Ty}
 

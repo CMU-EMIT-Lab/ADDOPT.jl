@@ -5,10 +5,10 @@ struct FusionDynamics <: PropertyDynamics
     τ::Float64
 
     n::Int
-    T_cache::Dict{DataType, Any}
+    T_cache::Dict{Tuple{DataType, Int}, Any}
 
     function FusionDynamics(T_melt, τ; n=1)
-        return new(T_melt, τ, n, Dict{DataType, Any}())
+        return new(T_melt, τ, n, Dict{Tuple{DataType, Int}, Any}())
     end
 end
 
@@ -17,7 +17,8 @@ property_min(pd::FusionDynamics) = -Inf * ones(pd.n)
 property_max(pd::FusionDynamics) = Inf * ones(pd.n)
 
 function dynamics_function!(pd::FusionDynamics, td::TransferDynamics, dα::AbstractVector{Ty}, α, s, t) where Ty
-    T = get!(pd.T_cache, Ty) do
+    thread::Int = Threads.threadid()
+    T = get!(pd.T_cache, (Ty, thread)) do
         zeros(Ty, Nα(pd))
     end::Vector{Ty}
 

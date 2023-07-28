@@ -27,15 +27,15 @@ struct PlanarGMAWDynamicsPrescribed <: InputDynamics
     xmax::Float64
     tmin::Float64
     tmax::Float64
-    
-    F_cache::Dict{DataType,Any}
-    ZW_cache::Dict{DataType,Any}
+
+    F_cache::Dict{Tuple{DataType, Int},Any}
+    ZW_cache::Dict{Tuple{DataType, Int},Any}
 
     function PlanarGMAWDynamicsPrescribed(nrows, ncols, l, xₙ, zₙ, ρ, cₚ, T∞, Tₗ, wire_diam, h∞, h₀, hₐᵣ, η, γᵣ, γₕ, wₓ, bₕ, xmin, xmax, tmin, tmax)
-        F = Dict{DataType,Any}()
-        ZW = Dict{DataType,Any}()
+        F = Dict{Tuple{DataType, Int},Any}()
+        ZW = Dict{Tuple{DataType, Int},Any}()
 
-        return new(nrows, ncols, l, xₙ, zₙ, ρ, cₚ, T∞, Tₗ, wire_diam, h∞, h₀, hₐᵣ, η, γᵣ, γₕ, wₓ, bₕ,  xmin, xmax, tmin, tmax, F, ZW)
+        return new(nrows, ncols, l, xₙ, zₙ, ρ, cₚ, T∞, Tₗ, wire_diam, h∞, h₀, hₐᵣ, η, γᵣ, γₕ, wₓ, bₕ, xmin, xmax, tmin, tmax, F, ZW)
     end
 end
 
@@ -47,7 +47,7 @@ input_max(id::PlanarGMAWDynamicsPrescribed) = [0.1]
 input_idle(id::PlanarGMAWDynamicsPrescribed) = [0.0]
 
 state_min(id::PlanarGMAWDynamicsPrescribed) = [id.l]
-state_max(id::PlanarGMAWDynamicsPrescribed) = [id.l*10]
+state_max(id::PlanarGMAWDynamicsPrescribed) = [id.l * 10]
 
 function dynamics_function!(id::PlanarGMAWDynamicsPrescribed, dr::AbstractVector{Ty}, s, r, u, t, zi) where {Ty}
     N = length(s) ÷ 2
@@ -57,12 +57,12 @@ function dynamics_function!(id::PlanarGMAWDynamicsPrescribed, dr::AbstractVector
     rₘₚ = r[1]
     WFS = u[1]
     l, xₙ, zₙ = id.l, id.xₙ, id.zₙ
-     ρ, cₚ, T∞, Tₗ, wire_diam = id.ρ, id.cₚ, id.T∞, id.Tₗ, id.wire_diam
+    ρ, cₚ, T∞, Tₗ, wire_diam = id.ρ, id.cₚ, id.T∞, id.Tₗ, id.wire_diam
     h∞, h₀, hₐᵣ, η, γᵣ, γₕ, wₓ, bₕ = id.h∞, id.h₀, id.hₐᵣ, id.η, id.γᵣ, id.γₕ, id.wₓ, id.bₕ
     xmin, xmax, tmin, tmax = id.xmin, id.xmax, id.tmin, id.tmax
     TS = abs(xmax - xmin) / (tmax - tmin)
 
-    r̄ₘₚ = wire_diam * √((WFS + .001) / (TS + .001)) * √(1 / 2) #: wire_diam # (eltype(ZW) == Symbolics.Num) || (WFS > 0 && TS > 0) ? 
+    r̄ₘₚ = wire_diam * √((WFS + 0.001) / (TS + 0.001)) * √(1 / 2) #: wire_diam # (eltype(ZW) == Symbolics.Num) || (WFS > 0 && TS > 0) ? 
 
     dr[1] = γᵣ * (r̄ₘₚ - rₘₚ)
 end
@@ -76,21 +76,22 @@ function input_function!(id::PlanarGMAWDynamicsPrescribed, ds::AbstractVector{Ty
     WFS = u[1]
     # xₜ, zₜ, rₘₚ, zₘₚ = r[1], r[2], r[3], r[4]    
     l, xₙ, zₙ = id.l, id.xₙ, id.zₙ
-     ρ, cₚ, T∞, wire_diam = id.ρ, id.cₚ, id.T∞, id.wire_diam
+    ρ, cₚ, T∞, wire_diam = id.ρ, id.cₚ, id.T∞, id.wire_diam
     h∞, h₀, hₐᵣ, η, γᵣ, γₕ, wₓ, bₕ = id.h∞, id.h₀, id.hₐᵣ, id.η, id.γᵣ, id.γₕ, id.wₓ, id.bₕ
     xmin, xmax, tmin, tmax = id.xmin, id.xmax, id.tmin, id.tmax
     TS = abs(xmax - xmin) / (tmax - tmin)
     zₘₚ = l
     xₜ = clamp((xmax - xmin) / (tmax - tmin) * (t - tmin) + xmin, xmin, xmax)
 
-    F = get!(id.F_cache, Ty) do
+    thread::Int = Threads.threadid()
+    F = get!(id.F_cache, (Ty, thread)) do
         zeros(Ty, n_rows * n_cols)
     end::Vector{Ty}
 
     ṁ = WFS * π * (wire_diam / 2)^2 * ρ # kg/s
     P = 29000 * WFS # W/(m/s) * (m/s)
 
-    @. F = (l^2 / (2π*(l/wₓ)*rₘₚ)) * exp(-((xₙ - xₜ)^2/(l/wₓ)^2 + (zₙ - zₘₚ)^2/rₘₚ^2)/2)
+    @. F = (l^2 / (2π * (l / wₓ) * rₘₚ)) * exp(-((xₙ - xₜ)^2 / (l / wₓ)^2 + (zₙ - zₘₚ)^2 / rₘₚ^2) / 2)
     # @. F = normpdf((xₙ - xₜ) / l * wₓ) * normpdf((zₙ - zₘₚ) / rₘₚ) #* logistic((zₙ - zₘₚ) / l + bₕ) 
 
     # if eltype(F) == Symbolics.Num

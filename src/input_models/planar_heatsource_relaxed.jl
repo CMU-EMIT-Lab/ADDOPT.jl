@@ -22,7 +22,7 @@ struct PlanarHeatsourceDynamics <: InputDynamics
     Qz::Matrix{Float64}
     Qc::Matrix{Float64}
 
-    P2_cache::Dict{DataType,Any}
+    P2_cache::Dict{Tuple{DataType, Int},Any}
 
     function PlanarHeatsourceDynamics(nrows, ncols, l, xₙ, zₙ, Pₘₐₓ, Pₘᵢₙ, ρ, cₚ, σ, vₘₐₓ)
         nvox = nrows * ncols
@@ -31,7 +31,7 @@ struct PlanarHeatsourceDynamics <: InputDynamics
         Qz = ones(nvox) * (zₙ .^ 2)' - (zₙ * zₙ') - σ^2 * ones(nvox, nvox)
         Qc = ones(nvox) * (xₙ .* zₙ)' - (xₙ * zₙ')
 
-        P2 = Dict{DataType,Any}()
+        P2 = Dict{Tuple{DataType, Int},Any}()
 
         return new(nrows, ncols, l, xₙ, zₙ, Pₘₐₓ, Pₘᵢₙ, σ, ρ, cₚ, vₘₐₓ, 20Qx, 20Qz, 20Qc, P2)
     end
@@ -51,7 +51,7 @@ input_max(id::PlanarHeatsourceDynamics) = [Inf * ones(id.nrows * id.ncols); id.v
 input_idle(id::PlanarHeatsourceDynamics) = zeros(id.nrows * id.ncols + 2)
 
 state_min(id::PlanarHeatsourceDynamics) = [0.0; 0.0]
-state_max(id::PlanarHeatsourceDynamics) = [id.l * (id.ncols+1); id.l * (id.nrows+1)]
+state_max(id::PlanarHeatsourceDynamics) = [id.l * (id.ncols + 1); id.l * (id.nrows + 1)]
 
 function dynamics_function!(id::PlanarHeatsourceDynamics, dr::AbstractVector{Ty}, s, r, u, t, zi) where {Ty}
     nvox = id.nrows * id.ncols
@@ -92,7 +92,8 @@ function inequality_constraint!(id::PlanarHeatsourceDynamics, c::AbstractVector{
     Qx, Qz = id.Qx, id.Qz
     Q = Diagonal(ones(nvox))
 
-    P2 = get!(id.P2_cache, Ty) do
+    thread::Int = Threads.threadid()
+    P2 = get!(id.P2_cache, (Ty, thread)) do
         zeros(Ty, nvox)
     end::Vector{Ty}
 

@@ -13,11 +13,11 @@ struct PlanarHeatsourceDynamics <: InputDynamics
     ρ::Float64
     cₚ::Float64
 
-    F_cache::Dict{DataType,Any}
-    
+    F_cache::Dict{Tuple{DataType, Int},Any}
+
     function PlanarHeatsourceDynamics(nrows, ncols, l, xₙ, zₙ, ρ, cₚ, σ)
-        F = Dict{DataType,Any}()
-    
+        F = Dict{Tuple{DataType, Int},Any}()
+
         return new(nrows, ncols, l, xₙ, zₙ, σ, ρ, cₚ, F)
     end
 end
@@ -30,7 +30,7 @@ input_max(id::PlanarHeatsourceDynamics) = [0.03; 0.03; 500.0] # fourth input is 
 input_idle(id::PlanarHeatsourceDynamics) = [0.0; 0.0; 0.0]
 
 state_min(id::PlanarHeatsourceDynamics) = [0.0; 0.0]
-state_max(id::PlanarHeatsourceDynamics) = [(id.ncols+1)*id.l; (id.nrows+1)*id.l]
+state_max(id::PlanarHeatsourceDynamics) = [(id.ncols + 1) * id.l; (id.nrows + 1) * id.l]
 
 function dynamics_function!(id::PlanarHeatsourceDynamics, dr::AbstractVector{Ty}, s, r, u, t, zi) where {Ty}
     n_rows, n_cols = id.nrows, id.ncols
@@ -50,11 +50,12 @@ function input_function!(id::PlanarHeatsourceDynamics, ds::AbstractVector{Ty}, r
     l, xₙ, zₙ, σ = id.l, id.xₙ, id.zₙ, id.σ
     ρ, cₚ = id.ρ, id.cₚ
 
-    F = get!(id.F_cache, Ty) do
+    thread::Int = Threads.threadid()
+    F = get!(id.F_cache, (Ty, thread)) do
         zeros(Ty, n_rows * n_cols)
     end::Vector{Ty}
 
-    @. F = (l^2 / (2π*σ^2)) * exp(-((xₙ - xₜ)^2 + (zₙ - zₜ)^2)/(2*σ^2))
+    @. F = (l^2 / (2π * σ^2)) * exp(-((xₙ - xₜ)^2 + (zₙ - zₜ)^2) / (2 * σ^2))
 
     # if eltype(F) == Symbolics.Num
     #     @. F += xₜ + zₜ + P
