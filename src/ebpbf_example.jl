@@ -31,7 +31,7 @@ n = 40
 nrows = n
 ncols = n
 nvox = nrows * ncols
-l = 10e-3 /n # m, aka 10mm / n 
+l = 10e-3 / n # m, aka 10mm / n 
 
 process = PlanarLPBF(nrows, ncols, l, k, ρ, cₚ, T∞, h∞, σ, Pₛₑₜ, Pₛₑₜ, vₘₐₓ, Tₘ, τ, Tboil, 200.0e-3)
 
@@ -77,22 +77,17 @@ ztold = l
 idx = 1
 
 Nkb = 0
-while minimum(cumulative_fuse) < Tₗ
+while minimum(cumulative_fuse) ≤ Tₗ
 # for k in 1:Nkb
     global Nkb += 1
-    # if cumulative_heat[idx] ≥ Tₗ
-        global idx = argmin(cumulative_heat)
-    # end
+    global idx = argmin(cumulative_heat)
     xₜ, zₜ = px[idx], pz[idx]
 
-    σb = 0.5e-3 / 2.5 
+    σb = l / 2#.5
     Pin = @. (l^2 / (2π*σb^2)) * exp(-((px - xₜ)^2 + (pz - zₜ)^2)/(2σb^2)) * Pₛₑₜ
-    # Pin = zeros(nvox)
-    # Pin[idx] = Pₛₑₜ
 
     cumulative_fuse .= max.(cumulative_fuse, cumulative_heat)#logistic.((cumulative_heat.-Tₘ)))
 
-    # push!(X0, [cumulative_heat; cumulative_fuse; xₜ; zₜ])
     push!(X0, [cumulative_heat; xₜ; zₜ])
     push!(P0, [Pin; (xₜ-xtold)/Δtb; (zₜ-ztold)/Δtb])
     global xtold = xₜ
@@ -102,28 +97,23 @@ while minimum(cumulative_fuse) < Tₗ
 end
 @show Nkb
 
-push!(X0, X0[end])
-push!(X0, X0[end])
+for k in 1:Nkc
+    push!(X0, X0[end])
+end
 X0 = [X0,]
 U0 = [P0,]
 
-println(X0[1][end])
+# println(X0[1][end])
 
 problem = AdditiveProblem(process, objective, Nkb, Nkc, Nc, x₀, x̄=x̄, Δtb=Δtb, Δtc=Δtc, final_constraint=false, hessian=true)
 z0 = marshall_z(problem.idx, X0, U0, Δtb, Δtc)
-# z = load_object("traj_lpbf_ebpbf_8.jld2")
-# c = zeros(problem.idx.Nconstr)
-# constraints!(problem.process, c, z0, problem.idx, problem.x₀, problem.cp, Δtb=Δtb, Δtc=Δtc,)
-# @show c
-z, X, U, Δt = optimize_trajectory(problem; max_iter=10_000, z₀=z0)
+z, X, U, Δt = optimize_trajectory(problem; max_iter=10_000, z₀=z0, solv="ma86")
 
 Y = [x[1:nvox] .* 1e3 for x in X]
-# animate_state_history([x[1:2nvox] for x in X], Δtb * 1000, nrows, ncols, strid=1, path="animation_state_ebpbf_8.mp4")
-# animate_measurement_history([x[(nvox+1):2nvox] .* 1e3 for x in X], Δtb * 1000, nrows, ncols, strid=1, path="animation_fusion_ebpbf_8.mp4", scale=(600, 2200))#scale=(0, 1000))
-animate_measurement_history(Y, Δtb * 1000, nrows, ncols, strid=1, path="animation_temperature_ebpbf_8.mp4", scale=(600, 2200))
-animate_measurement_history([u[1:nvox] .* 1e3 for u in U], Δtb * 1000, nrows, ncols, strid=1, path="animation_power_ebpbf_8.mp4", quantity="Power W", scale=(0, 4000))
+animate_measurement_history(Y, Δtb * 1000, nrows, ncols, strid=1, path="animation_temperature_ebpbf_9.mp4", scale=(600, 2200))
+animate_measurement_history([u[1:nvox] .* 1e3 for u in U], Δtb * 1000, nrows, ncols, strid=1, path="animation_power_ebpbf_9.mp4", quantity="Power W", scale=(0, 4000))
 
-save_object("traj_lpbf_ebpbf_8.jld2", z)
+save_object("traj_lpbf_ebpbf_9.jld2", z)
 
 xₙ = process.input_dynamics.xₙ
 zₙ = process.input_dynamics.zₙ
@@ -135,11 +125,13 @@ P = [sum(u[1:nvox]) for u in U]
 plot(P)
 
 plot(xt, zt)
-savefig("scan_strat_8.png")
+savefig("scan_strat_9.png")
 # 1 - sigmoid fusion dynamics, no minimum power, maximum number of iterations exceeded
 # 2 - max temp dynamics, maxed out on iterations
 # 3 - direct quadratic temperatue objective 500 um, 10x10
 # 4 - direct quadratic temperatue objective 350 um, 10x10
 # 5 - direct quadratic temperatue objective 250 um, 10x10
 # 6 - direct quadratic temperatue objective, single voxel constraint, 10x10, 1.169e4 solution
-# 7 - direct quadratic temperatue objective, low T goal, single voxel constraint, 10x10, 1.172e4 solution with T\infty as goal
+# 7 - direct quadratic temperatue objective, low T goal, single voxel constraint, 10x10, 1.172e4 solution with T\infty as goal 5mmx5mm, 36s
+# 8 - direct quadratic temperatue objective, low T goal, single voxel constraint, 20x20 with 5mmx5mm, 200s
+# 8 - direct quadratic temperatue objective, low T goal, single voxel constraint, 40x40 with 10mmx10mm
