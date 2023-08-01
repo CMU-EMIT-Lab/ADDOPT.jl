@@ -27,9 +27,10 @@ Manifest.toml
 *.so
 
 # Videos
-*.mp4
-*.jld2
+videos/*
 
 # Images
-*.svg
-*.png
+fig/*
+
+# Data
+data/*
