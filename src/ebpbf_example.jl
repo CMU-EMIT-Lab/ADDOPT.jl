@@ -3,6 +3,7 @@ using LinearAlgebra
 using .ADDOPT: AdditiveProblem, QuadraticCubicObjective, optimize_trajectory, animate_state_history, animate_measurement_history, PlanarLPBF, marshall_z, constraints!, QuadraticObjective
 using Plots
 using JLD2
+using CSV, Tables
 using StatsFuns
 
 # Machine parameters
@@ -43,7 +44,7 @@ ȳ = Tₗ * ones(nvox)
 
 # x₀ = [T∞ * ones(nvox); T∞ * ones(nvox); l; l] # zeros(nvox)
 # x̄ = [T̄; ȳ; l; l]
-x₀ = [T∞ * ones(nvox);  l; l] # zeros(nvox)
+x₀ = [T∞ * ones(nvox); l; l] # zeros(nvox)
 x̄ = [T̄; l; l]
 ū = zeros(nvox + 2)
 
@@ -65,7 +66,7 @@ Nc = 1
 
 # generate initial guess
 px = process.transfer_dynamics.xₙ
-pz = process.transfer_dynamics.zₙ  
+pz = process.transfer_dynamics.zₙ
 cumulative_heat = T∞ * ones(nvox)
 cumulative_fuse = zeros(nvox)
 P0 = []
@@ -78,18 +79,18 @@ idx = 1
 
 Nkb = 0
 while minimum(cumulative_fuse) ≤ Tₗ
-# for k in 1:Nkb
+    # for k in 1:Nkb
     global Nkb += 1
     global idx = argmin(cumulative_heat)
     xₜ, zₜ = px[idx], pz[idx]
 
     σb = l / 2#.5
-    Pin = @. (l^2 / (2π*σb^2)) * exp(-((px - xₜ)^2 + (pz - zₜ)^2)/(2σb^2)) * Pₛₑₜ
+    Pin = @. (l^2 / (2π * σb^2)) * exp(-((px - xₜ)^2 + (pz - zₜ)^2) / (2σb^2)) * Pₛₑₜ
 
     cumulative_fuse .= max.(cumulative_fuse, cumulative_heat)#logistic.((cumulative_heat.-Tₘ)))
 
     push!(X0, [cumulative_heat; xₜ; zₜ])
-    push!(P0, [Pin; (xₜ-xtold)/Δtb; (zₜ-ztold)/Δtb])
+    push!(P0, [Pin; (xₜ - xtold) / Δtb; (zₜ - ztold) / Δtb])
     global xtold = xₜ
     global ztold = zₜ
 
@@ -106,14 +107,19 @@ U0 = [P0,]
 # println(X0[1][end])
 
 problem = AdditiveProblem(process, objective, Nkb, Nkc, Nc, x₀, x̄=x̄, Δtb=Δtb, Δtc=Δtc, final_constraint=false, hessian=true)
+
 z0 = marshall_z(problem.idx, X0, U0, Δtb, Δtc)
-z, X, U, Δt = optimize_trajectory(problem; max_iter=10_000, z₀=z0, solv="ma86")
+z, X, U, Δt = optimize_trajectory(problem; max_iter=10_000, z₀=z0, solv="ma77")
 
 Y = [x[1:nvox] .* 1e3 for x in X]
-animate_measurement_history(Y, Δtb * 1000, nrows, ncols, strid=1, path="animation_temperature_ebpbf_9.mp4", scale=(600, 2200))
-animate_measurement_history([u[1:nvox] .* 1e3 for u in U], Δtb * 1000, nrows, ncols, strid=1, path="animation_power_ebpbf_9.mp4", quantity="Power W", scale=(0, 4000))
+animate_measurement_history(Y, Δtb * 1000, nrows, ncols, strid=1, path="animation_temperature_ebpbf_10.mp4", scale=(600, 2200))
+animate_measurement_history([u[1:nvox] .* 1e3 for u in U], Δtb * 1000, nrows, ncols, strid=1, path="animation_power_ebpbf_10.mp4", quantity="Power W", scale=(0, 4000))
 
-save_object("traj_lpbf_ebpbf_9.jld2", z)
+save_object("traj_lpbf_ebpbf_10.jld2", z)
+
+# z = load_object("traj_lpbf_ebpbf_10.jld2")
+X = vcat([[z[problem.idx.x[c][k]] for k in 1:Nkb] for c in 1:Nc]...)
+U = vcat([[z[problem.idx.u[c][k]] for k in 1:Nkb] for c in 1:Nc]...)
 
 xₙ = process.input_dynamics.xₙ
 zₙ = process.input_dynamics.zₙ
@@ -125,7 +131,11 @@ P = [sum(u[1:nvox]) for u in U]
 plot(P)
 
 plot(xt, zt)
-savefig("scan_strat_9.png")
+savefig("scan_strat_10.png")
+
+will = vcat([[x; z; Δtb]' for (x, z) in zip(xt, zt)]...)
+CSV.write("scan_strat_10.csv", Tables.table(will; header=["X", "Y", "Δt"]))
+
 # 1 - sigmoid fusion dynamics, no minimum power, maximum number of iterations exceeded
 # 2 - max temp dynamics, maxed out on iterations
 # 3 - direct quadratic temperatue objective 500 um, 10x10
