@@ -29,11 +29,13 @@ function dynamics_function!(pd::HardnessDynamics, td::TransferDynamics, dα::Abs
     unlock(pd.dictlock)
 
     temperature!(td, T, s)
-    @. dα = (1 - α) * pd.A * exp(-pd.τ / T)
+    # @. dα = (1 - α) * pd.A * exp(-pd.τ / T)
     # dα[T .> 1000.0] .= 0.0
     # @. dα = (logistic((1000.0 - T)/10.0) - α) * pd.A * exp(-pd.τ / T) 
     ## @. dα = (1 - α) * pd.A * exp(-pd.τ / T) * logistic((1000.0 - T)/10.0)
     # @. dα = (1 - α) * rate(T)
+
+    map!((T, α) -> (logistic((1000.0 - T) / 10.0) - α) * pd.A * exp(-pd.τ / T), dα, T, α)
 end
 
 function rate(T)

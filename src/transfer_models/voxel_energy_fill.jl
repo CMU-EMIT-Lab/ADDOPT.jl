@@ -26,14 +26,14 @@ struct VoxelEnergyFillDynamics <: TransferDynamics
     Tmin::Float64
     Tmax::Float64
 
-    C_cache::Dict{Tuple{DataType, Int},Any}
-    K_cache::Dict{Tuple{DataType, Int},Any}
+    C_cache::Dict{Tuple{DataType,Int},Any}
+    K_cache::Dict{Tuple{DataType,Int},Any}
 
     B::Vector{Float64}
 
     function VoxelEnergyFillDynamics(nx, ny, nz, l, xₙ, yₙ, zₙ, k, ρ, cₚ, T∞, T₀, wire_diam, h∞, h₀, Tmin, Tmax)
-        C = Dict{Tuple{DataType, Int},Any}()
-        K = Dict{Tuple{DataType, Int},Any}()
+        C = Dict{Tuple{DataType,Int},Any}()
+        K = Dict{Tuple{DataType,Int},Any}()
 
         B = zeros(nx, ny, nz)
         B[:, :, 1] .= 1
@@ -70,7 +70,8 @@ function dynamics_function!(td::VoxelEnergyFillDynamics, ds::AbstractVector{Ty},
     E = view(s, 1:N)
     x = view(s, (N+1):2N)
 
-    μ(x) = typeof(x) == Symbolics.Num ? 10 * (x - 1)^2 : (x > 1 ? 10 * (x - 1)^2 : 0)
+    μ(x) = typeof(x) == Symbolics.Num ? 10.0 * (x - 1.0)^2 : (x > 1.0 ? 10.0 * (x - 1.0)^2 : 0.0)
+    K .= μ.(x)
 
     rcE = reshape(E, (nx, ny, nz))
     rcdE = reshape(dE, (nx, ny, nz))
@@ -95,8 +96,8 @@ function dynamics_function!(td::VoxelEnergyFillDynamics, ds::AbstractVector{Ty},
     Kᵢ = view(rcK, :, :, 1:(nz-1))
     Kⱼ = view(rcK, :, :, 2:nz)
     dEᵢ .+= (k / (l^2 * ρ * cₚ)) .* (Eⱼ .* xᵢ .- Eᵢ .* xⱼ)
-    dxᵢ .+= μ.(xⱼ) .- μ.(xᵢ)
-    dEᵢ .+= μ.(xⱼ) .* Eⱼ .- μ.(xᵢ) .* Eᵢ
+    dxᵢ .+= Kⱼ .- Kᵢ
+    dEᵢ .+= Kⱼ .* Eⱼ .- Kᵢ .* Eᵢ
     Cᵢ .-= xⱼ
 
     # From bottom
@@ -111,8 +112,8 @@ function dynamics_function!(td::VoxelEnergyFillDynamics, ds::AbstractVector{Ty},
     Kᵢ = view(rcK, :, :, 2:nz)
     Kⱼ = view(rcK, :, :, 1:(nz-1))
     dEᵢ .+= (k / (l^2 * ρ * cₚ)) .* (Eⱼ .* xᵢ .- Eᵢ .* xⱼ)
-    dxᵢ .+= μ.(xⱼ) .- μ.(xᵢ)
-    dEᵢ .+= μ.(xⱼ) .* Eⱼ .- μ.(xᵢ) .* Eᵢ
+    dxᵢ .+= Kⱼ .- Kᵢ
+    dEᵢ .+= Kⱼ .* Eⱼ .- Kᵢ .* Eᵢ
     Cᵢ .-= xⱼ
 
     # From in
@@ -127,8 +128,8 @@ function dynamics_function!(td::VoxelEnergyFillDynamics, ds::AbstractVector{Ty},
     Kᵢ = view(rcK, :, 2:ny, :)
     Kⱼ = view(rcK, :, 1:(ny-1), :)
     dEᵢ .+= (k / (l^2 * ρ * cₚ)) .* (Eⱼ .* xᵢ .- Eᵢ .* xⱼ)
-    dxᵢ .+= μ.(xⱼ) .- μ.(xᵢ)
-    dEᵢ .+= μ.(xⱼ) .* Eⱼ .- μ.(xᵢ) .* Eᵢ
+    dxᵢ .+= Kⱼ .- Kᵢ
+    dEᵢ .+= Kⱼ .* Eⱼ .- Kᵢ .* Eᵢ
     Cᵢ .-= xⱼ
 
     # From out
@@ -143,8 +144,8 @@ function dynamics_function!(td::VoxelEnergyFillDynamics, ds::AbstractVector{Ty},
     Kᵢ = view(rcK, :, 1:(ny-1), :)
     Kⱼ = view(rcK, :, 2:ny, :)
     dEᵢ .+= (k / (l^2 * ρ * cₚ)) .* (Eⱼ .* xᵢ .- Eᵢ .* xⱼ)
-    dxᵢ .+= μ.(xⱼ) .- μ.(xᵢ)
-    dEᵢ .+= μ.(xⱼ) .* Eⱼ .- μ.(xᵢ) .* Eᵢ
+    dxᵢ .+= Kⱼ .- Kᵢ
+    dEᵢ .+= Kⱼ .* Eⱼ .- Kᵢ .* Eᵢ
     Cᵢ .-= xⱼ
 
     # From left
@@ -159,8 +160,8 @@ function dynamics_function!(td::VoxelEnergyFillDynamics, ds::AbstractVector{Ty},
     Kᵢ = view(rcK, 2:nx, :, :)
     Kⱼ = view(rcK, 1:(nx-1), :, :)
     dEᵢ .+= (k / (l^2 * ρ * cₚ)) .* (Eⱼ .* xᵢ .- Eᵢ .* xⱼ)
-    dxᵢ .+= μ.(xⱼ) .- μ.(xᵢ)
-    dEᵢ .+= μ.(xⱼ) .* Eⱼ .- μ.(xᵢ) .* Eᵢ
+    dxᵢ .+= Kⱼ .- Kᵢ
+    dEᵢ .+= Kⱼ .* Eⱼ .- Kᵢ .* Eᵢ
     Cᵢ .-= xⱼ
 
     # From right
@@ -175,8 +176,8 @@ function dynamics_function!(td::VoxelEnergyFillDynamics, ds::AbstractVector{Ty},
     Kᵢ = view(rcK, 1:(nx-1), :, :)
     Kⱼ = view(rcK, 2:nx, :, :)
     dEᵢ .+= (k / (l^2 * ρ * cₚ)) .* (Eⱼ .* xᵢ .- Eᵢ .* xⱼ)
-    dxᵢ .+= μ.(xⱼ) .- μ.(xᵢ)
-    dEᵢ .+= μ.(xⱼ) .* Eⱼ .- μ.(xᵢ) .* Eᵢ
+    dxᵢ .+= Kⱼ .- Kᵢ
+    dEᵢ .+= Kⱼ .* Eⱼ .- Kᵢ .* Eᵢ
     Cᵢ .-= xⱼ
 
     dE .+= h∞ .* C .* (T∞ .* x .* l^2 .- E ./ (ρ * l * cₚ)) # Convection to environment
@@ -194,5 +195,5 @@ function temperature!(td::VoxelEnergyFillDynamics, T, s)
     E = view(s, 1:N)
     x = view(s, (N+1):2N)
 
-    T .= E ./ (td.l^3 * td.ρ * td.cₚ) + (1 .- x) .* 293.15
+    map!((E, x) -> E / (td.l^3 * td.ρ * td.cₚ) + (1.0 - x) * 293.15, T, E, x)
 end
