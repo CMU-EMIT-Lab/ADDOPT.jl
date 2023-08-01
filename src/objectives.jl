@@ -23,62 +23,6 @@ struct QuadraticObjective <: Objective
     ū::Vector{Float64}
 end
 
-function objective_hessian_structure(o::QuadraticObjective, idx)
-    Nx, Nkb, Nkc, Nc, Nu = idx.Nstates, idx.Nkb, idx.Nkc, idx.Nc, idx.Nu
-    rows = []
-    cols = []
-
-    for c in 1:Nc
-        for k in 1:Nkb
-            append!(rows, idx.x[c][k])
-            append!(cols, idx.x[c][k])
-
-            append!(rows, idx.u[c][k])
-            append!(cols, idx.u[c][k])
-        end
-
-        for k in (Nkb+1):(Nkb+Nkc)
-            if (c < Nc) || (k < Nkb + Nkc)
-                append!(rows, idx.x[c][k])
-                append!(cols, idx.x[c][k])
-            end
-        end
-    end
-
-    append!(rows, idx.x[Nc][Nkb+Nkc])
-    append!(cols, idx.x[Nc][Nkb+Nkc])
-
-    return collect(zip(rows, cols))
-end
-
-function objective_hessian_values(o::QuadraticObjective, idx, H, z)
-    Nx, Nkb, Nkc, Nc, Nu = idx.Nstates, idx.Nkb, idx.Nkc, idx.Nc, idx.Nu
-
-    Qv = diag(o.Q)
-    Rv = diag(o.R)
-    Qfv = diag(o.Qf)
-
-    i = 0
-    for c in 1:Nc
-        for k in 1:Nkb
-            H[(1+i):(length(Qv)+i)] .= Qv
-            i += length(Qv)
-            H[(1+i):(length(Rv)+i)] .= Rv
-            i += length(Rv)
-        end
-
-        for k in (Nkb+1):(Nkb+Nkc)
-            if (c < Nc) || (k < Nkb + Nkc)
-                H[(1+i):(length(Qv)+i)] .= Qv
-                i += length(Qv)
-            end
-        end
-    end
-
-    H[(1+i):(length(Qfv)+i)] .= Qfv
-    i += length(Qfv)
-end
-
 function cost(o::QuadraticObjective, z, idx)
     Q, R, Qf, x̄, ū = o.Q, o.R, o.Qf, o.x̄, o.ū
     Nx, Nkb, Nkc, Nc, Nu = idx.Nstates, idx.Nkb, idx.Nkc, idx.Nc, idx.Nu
@@ -151,6 +95,216 @@ function gradient(o::QuadraticObjective, grad, z, idx)
     @. ex = xₙ - x̄
     mul!(view(grad, idx.x[Nc][Nkb+Nkc]), Qf, ex)
 
+end
+
+function objective_hessian_structure(o::QuadraticObjective, idx)
+    Nx, Nkb, Nkc, Nc, Nu = idx.Nstates, idx.Nkb, idx.Nkc, idx.Nc, idx.Nu
+    rows = []
+    cols = []
+
+    for c in 1:Nc
+        for k in 1:Nkb
+            append!(rows, idx.x[c][k])
+            append!(cols, idx.x[c][k])
+
+            append!(rows, idx.u[c][k])
+            append!(cols, idx.u[c][k])
+        end
+
+        for k in (Nkb+1):(Nkb+Nkc)
+            if (c < Nc) || (k < Nkb + Nkc)
+                append!(rows, idx.x[c][k])
+                append!(cols, idx.x[c][k])
+            end
+        end
+    end
+
+    append!(rows, idx.x[Nc][Nkb+Nkc])
+    append!(cols, idx.x[Nc][Nkb+Nkc])
+
+    return collect(zip(rows, cols))
+end
+
+function objective_hessian_values(o::QuadraticObjective, idx, H, z)
+    Nx, Nkb, Nkc, Nc, Nu = idx.Nstates, idx.Nkb, idx.Nkc, idx.Nc, idx.Nu
+
+    Qv = diag(o.Q)
+    Rv = diag(o.R)
+    Qfv = diag(o.Qf)
+
+    i = 0
+    for c in 1:Nc
+        for k in 1:Nkb
+            H[(1+i):(length(Qv)+i)] .= Qv
+            i += length(Qv)
+            H[(1+i):(length(Rv)+i)] .= Rv
+            i += length(Rv)
+        end
+
+        for k in (Nkb+1):(Nkb+Nkc)
+            if (c < Nc) || (k < Nkb + Nkc)
+                H[(1+i):(length(Qv)+i)] .= Qv
+                i += length(Qv)
+            end
+        end
+    end
+
+    H[(1+i):(length(Qfv)+i)] .= Qfv
+    i += length(Qfv)
+end
+
+
+struct TimeWeightedQuadraticObjective <: Objective
+    Q::Diagonal{Float64,Vector{Float64}}
+    Qf::Diagonal{Float64,Vector{Float64}}
+    x̄::Vector{Float64}
+end
+
+function cost(o::TimeWeightedQuadraticObjective, z, idx)
+    Q, Qf, x̄ = o.Q, o.Qf, o.x̄
+    Nx, Nkb, Nkc, Nc, Nu = idx.Nstates, idx.Nkb, idx.Nkc, idx.Nc, idx.Nu
+
+    cost = 0.0
+    ex = zeros(eltype(z), Nx)
+    for c in 1:Nc
+
+        for k in 1:Nkb
+            xₖ = @view z[idx.x[c][k]]
+            Δt = z[idx.Δtb[c][k]]
+
+            @. ex = xₖ - x̄
+            cost += 0.5 * dot(ex, Q, ex) * Δt
+        end
+
+        for k in (Nkb+1):(Nkb+Nkc)
+            xₖ = @view z[idx.x[c][k]]
+            Δt = z[idx.Δtc[c][k]]
+
+            @. ex = xₖ - x̄
+
+            if (c < Nc) || (k < Nkb + Nkc)
+                cost += 0.5 * dot(ex, Q, ex) * Δt
+            end
+        end
+    end
+
+    xₙ = @view z[idx.x[Nc][Nkb+Nkc]]
+    @. ex = xₙ - x̄
+    cost += 0.5 * dot(ex, Qf, ex)
+
+    return cost
+end
+
+function gradient(o::TimeWeightedQuadraticObjective, grad, z, idx)
+    Q, Qf, x̄ = o.Q, o.Qf, o.x̄
+    Nx, Nkb, Nkc, Nc, Nu = idx.Nstates, idx.Nkb, idx.Nkc, idx.Nc, idx.Nu
+    grad[:] .= 0
+
+    ex = zeros(eltype(z), Nx)
+    for c in 1:Nc
+
+        for k in 1:Nkb
+            xₖ = @view z[idx.x[c][k]]
+            Δt = z[idx.Δtb[c][k]]
+
+            @. ex = xₖ - x̄
+
+            grad[idx.Δtb[c][k]] = 0.5 * dot(ex, Q, ex)
+            ex .*= Δt
+            mul!(view(grad, idx.x[c][k]), Q, ex)
+        end
+
+        for k in (Nkb+1):(Nkb+Nkc)
+            xₖ = @view z[idx.x[c][k]]
+            Δt = z[idx.Δtc[c][k]]
+
+            @. ex = xₖ - x̄
+
+            if (c < Nc) || (k < Nkb + Nkc)
+                grad[idx.Δtc[c][k]] = 0.5 * dot(ex, Q, ex)
+                ex .*= Δt
+                mul!(view(grad, idx.x[c][k]), Q, ex)
+            end
+        end
+    end
+
+    xₙ = @view z[idx.x[Nc][Nkb+Nkc]]
+    @. ex = xₙ - x̄
+    mul!(view(grad, idx.x[Nc][Nkb+Nkc]), Qf, ex)
+
+end
+
+function objective_hessian_structure(o::TimeWeightedQuadraticObjective, idx)
+    Nx, Nkb, Nkc, Nc, Nu = idx.Nstates, idx.Nkb, idx.Nkc, idx.Nc, idx.Nu
+    rows = []
+    cols = []
+
+    for c in 1:Nc
+        for k in 1:Nkb
+            append!(rows, idx.x[c][k])
+            append!(cols, idx.x[c][k])
+
+            append!(rows, idx.x[c][k])
+            append!(cols, idx.Δtb[c][k] * ones(Int, Nx))
+        end
+
+        for k in (Nkb+1):(Nkb+Nkc)
+            if (c < Nc) || (k < Nkb + Nkc)
+                append!(rows, idx.x[c][k])
+                append!(cols, idx.x[c][k])
+
+                append!(rows, idx.x[c][k])
+                append!(cols, idx.Δtc[c][k] * ones(Int, Nx))
+            end
+        end
+    end
+
+    append!(rows, idx.x[Nc][Nkb+Nkc])
+    append!(cols, idx.x[Nc][Nkb+Nkc])
+
+    return collect(zip(rows, cols))
+end
+
+function objective_hessian_values(o::TimeWeightedQuadraticObjective, idx, H, z)
+    Q, Qf, x̄ = o.Q, o.Qf, o.x̄
+    Nx, Nkb, Nkc, Nc, Nu = idx.Nstates, idx.Nkb, idx.Nkc, idx.Nc, idx.Nu
+
+    i = 0
+    ex = zeros(eltype(z), Nx)
+    for c in 1:Nc
+        for k in 1:Nkb
+            xₖ = @view z[idx.x[c][k]]
+            Δt = z[idx.Δtb[c][k]]
+
+            @. ex = xₖ - x̄
+
+            H[(1+i):(Nx+i)] .= diag(Q)
+            H[(1+i):(Nx+i)] .*= Δt
+            i += Nx
+
+            mul!(view(H, (1+i):(Nx+i)), Q, ex)
+            i += Nx
+        end
+
+        for k in (Nkb+1):(Nkb+Nkc)
+            xₖ = @view z[idx.x[c][k]]
+            Δt = z[idx.Δtc[c][k]]
+
+            @. ex = xₖ - x̄
+
+            if (c < Nc) || (k < Nkb + Nkc)
+                H[(1+i):(Nx+i)] .= diag(Q)
+                H[(1+i):(Nx+i)] .*= Δt
+                i += Nx
+
+                mul!(view(H, (1+i):(Nx+i)), Q, ex)
+                i += Nx
+            end
+        end
+    end
+
+    H[(1+i):(Nx+i)] .= diag(Qf)
+    i += Nx
 end
 
 
