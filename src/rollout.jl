@@ -55,16 +55,16 @@ function solve_RK4(f!, x₀, U, dt, Nk, t₀, zi)
         Ui = U[i]
 
         x₁ .= Xi
-        f!(k₁, x₁, Ui, t, zi+i)
+        f!(k₁, x₁, Ui, t, zi + i)
 
         @. x₂ = Xi + k₁ * dt / 2
-        f!(k₂, x₂, Ui, t, zi+i)
+        f!(k₂, x₂, Ui, t, zi + i)
 
         @. x₃ = Xi + k₂ * dt / 2
-        f!(k₃, x₃, Ui, t, zi+i)
+        f!(k₃, x₃, Ui, t, zi + i)
 
         @. x₄ = Xi + k₃ * dt
-        f!(k₄, x₄, Ui, t, zi+i)
+        f!(k₄, x₄, Ui, t, zi + i)
 
         @. X[i+1] = Xi + (1 / 6) * (k₁ + 2k₂ + 2k₃ + k₄) * dt
         next!(p)
@@ -77,6 +77,37 @@ function solve_RK4(f!, x₀, U, dt, Nk, t₀, zi)
     # end
 
     return X
+end
+
+function inplace_solve_rk4(process::Process{ID,TD,PD}, x₀::Vector{Ty}, dt::Float64, Nk::Int, t₀::Float64, zi::Int)::Vector{Ty} where {Ty,ID,TD,PD}
+    Nx = length(x₀)
+    x = zeros(Ty, Nx)
+    u = zeros(Ty, Nx)
+    x .= x₀
+    k₁, k₂, k₃, k₄ = zeros(Ty, Nx), zeros(Ty, Nx), zeros(Ty, Nx), zeros(Ty, Nx)
+    x₁, x₂, x₃, x₄ = zeros(Ty, Nx), zeros(Ty, Nx), zeros(Ty, Nx), zeros(Ty, Nx)
+
+    t = t₀
+    for i in 1:(Nk-1)
+        x₁ .= x
+        combined_dynamics!(k₁, x₁, u, process, t, zi + i)
+
+        @. x₂ = x + k₁ * dt / 2
+        combined_dynamics!(k₂, x₂, u, process, t, zi + i)
+
+        @. x₃ = x + k₂ * dt / 2
+        combined_dynamics!(k₃, x₃, u, process, t, zi + i)
+
+        @. x₄ = x + k₃ * dt
+        combined_dynamics!(k₄, x₄, u, process, t, zi + i)
+
+        x .+= @. (k₁ + 2k₂ + 2k₃ + k₄) * (dt / 6)
+        t += dt
+    end
+
+    # @show x[1:(Nx÷3)]
+    # @show x[(end-Nx÷3+1):end]
+    return x
 end
 
 function step_RK4(f!, Xi, u, dt, t, zi)
@@ -100,4 +131,7 @@ function step_RK4(f!, Xi, u, dt, t, zi)
     @. Xf = Xi + (1 / 6) * (k₁ + 2k₂ + 2k₃ + k₄) * dt
 
     return Xf
+end
+
+function reinterpolate_traj(t)
 end

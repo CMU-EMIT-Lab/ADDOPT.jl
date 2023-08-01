@@ -39,6 +39,7 @@ include("rollout.jl")
 include("initial_guess.jl")
 include("visualization.jl")
 include("slicer.jl")
+include("goal_optimizer.jl")
 
 struct CachePackage
     fₖ_cache::Dict{Tuple{DataType,Int},Any}
