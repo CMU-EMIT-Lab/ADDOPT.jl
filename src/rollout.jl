@@ -133,5 +133,17 @@ function step_RK4(f!, Xi, u, dt, t, zi)
     return Xf
 end
 
-function reinterpolate_traj(t)
+function resample_vector_traj(t::Vector, traj::Vector{Vector}, t_new::Vector)
+    nx = length(traj[1])
+    ret = []
+
+    for i in 1:nx
+        interp = linear_interpolation(t, [v[i] for v in traj], extrapolation_bc=Flat())
+        push!(ret, interp.(t_new))
+    end
+
+    ret = hcat(ret...)
+    ret = collect(eachrow(ret))
+
+    return ret
 end

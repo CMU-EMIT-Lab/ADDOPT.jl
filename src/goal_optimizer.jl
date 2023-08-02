@@ -45,11 +45,12 @@ function MOI.eval_objective(prob::ThermalICProblem, z)
 end
 
 function MOI.eval_objective_gradient(prob::ThermalICProblem, grad_f, z)
-    y = thermal_ic_to_property_final(prob, z)
-    e = @. y - prob.ȳ
-    lsq_jac!(prob, prob.J, z)
+    # y = thermal_ic_to_property_final(prob, z)
+    # e = @. y - prob.ȳ
+    # lsq_jac!(prob, prob.J, z)
 
-    grad_f .= prob.J' * prob.Q * e
+    # grad_f .= prob.J' * prob.Q * e
+    ForwardDiff.gradient!(grad_f, E -> MOI.eval_objective(prob, E), z)
 end
 
 function MOI.eval_constraint(prob::ThermalICProblem, c, z)
