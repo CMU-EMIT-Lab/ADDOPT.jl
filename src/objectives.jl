@@ -156,12 +156,11 @@ end
 
 struct TimeWeightedQuadraticObjective <: Objective
     Q::Diagonal{Float64,Vector{Float64}}
-    Qf::Diagonal{Float64,Vector{Float64}}
     x̄::Vector{Float64}
 end
 
 function cost(o::TimeWeightedQuadraticObjective, z, idx)
-    Q, Qf, x̄ = o.Q, o.Qf, o.x̄
+    Q, x̄ = o.Q, o.x̄
     Nx, Nkb, Nkc, Nc, Nu = idx.Nstates, idx.Nkb, idx.Nkc, idx.Nc, idx.Nu
 
     cost = 0.0
@@ -169,34 +168,32 @@ function cost(o::TimeWeightedQuadraticObjective, z, idx)
     for c in 1:Nc
 
         for k in 1:Nkb
+            zi = (c - 1) * (Nkb + Nkc) + k
             xₖ = @view z[idx.x[c][k]]
             Δt = z[idx.Δtb[c][k]]
 
             @. ex = xₖ - x̄
-            cost += 0.5 * dot(ex, Q, ex) * Δt
+            cost += 0.5 * dot(ex, Q, ex) * zi
+            cost += Δt^2
         end
 
         for k in (Nkb+1):(Nkb+Nkc)
+            zi = (c - 1) * (Nkb + Nkc) + k
             xₖ = @view z[idx.x[c][k]]
             Δt = z[idx.Δtc[c][k]]
 
             @. ex = xₖ - x̄
 
-            if (c < Nc) || (k < Nkb + Nkc)
-                cost += 0.5 * dot(ex, Q, ex) * Δt
-            end
+            cost += 0.5 * dot(ex, Q, ex) * zi
+            cost += Δt^2
         end
     end
-
-    xₙ = @view z[idx.x[Nc][Nkb+Nkc]]
-    @. ex = xₙ - x̄
-    cost += 0.5 * dot(ex, Qf, ex)
 
     return cost
 end
 
 function gradient(o::TimeWeightedQuadraticObjective, grad, z, idx)
-    Q, Qf, x̄ = o.Q, o.Qf, o.x̄
+    Q, x̄ = o.Q, o.x̄
     Nx, Nkb, Nkc, Nc, Nu = idx.Nstates, idx.Nkb, idx.Nkc, idx.Nc, idx.Nu
     grad[:] .= 0
 
@@ -204,33 +201,29 @@ function gradient(o::TimeWeightedQuadraticObjective, grad, z, idx)
     for c in 1:Nc
 
         for k in 1:Nkb
+            zi = (c - 1) * (Nkb + Nkc) + k
             xₖ = @view z[idx.x[c][k]]
             Δt = z[idx.Δtb[c][k]]
 
             @. ex = xₖ - x̄
+            ex .*= zi
 
-            grad[idx.Δtb[c][k]] = 0.5 * dot(ex, Q, ex)
-            ex .*= Δt
+            grad[idx.Δtb[c][k]] = 2Δt
             mul!(view(grad, idx.x[c][k]), Q, ex)
         end
 
         for k in (Nkb+1):(Nkb+Nkc)
+            zi = (c - 1) * (Nkb + Nkc) + k
             xₖ = @view z[idx.x[c][k]]
             Δt = z[idx.Δtc[c][k]]
 
             @. ex = xₖ - x̄
+            ex .*= zi
 
-            if (c < Nc) || (k < Nkb + Nkc)
-                grad[idx.Δtc[c][k]] = 0.5 * dot(ex, Q, ex)
-                ex .*= Δt
-                mul!(view(grad, idx.x[c][k]), Q, ex)
-            end
+            grad[idx.Δtc[c][k]] = 2Δt
+            mul!(view(grad, idx.x[c][k]), Q, ex)
         end
     end
-
-    xₙ = @view z[idx.x[Nc][Nkb+Nkc]]
-    @. ex = xₙ - x̄
-    mul!(view(grad, idx.x[Nc][Nkb+Nkc]), Qf, ex)
 
 end
 
@@ -244,67 +237,47 @@ function objective_hessian_structure(o::TimeWeightedQuadraticObjective, idx)
             append!(rows, idx.x[c][k])
             append!(cols, idx.x[c][k])
 
-            append!(rows, idx.x[c][k])
-            append!(cols, idx.Δtb[c][k] * ones(Int, Nx))
+            append!(rows, idx.Δtb[c][k] * ones(Int, 1))
+            append!(cols, idx.Δtb[c][k] * ones(Int, 1))
         end
 
         for k in (Nkb+1):(Nkb+Nkc)
-            if (c < Nc) || (k < Nkb + Nkc)
-                append!(rows, idx.x[c][k])
-                append!(cols, idx.x[c][k])
+            append!(rows, idx.x[c][k])
+            append!(cols, idx.x[c][k])
 
-                append!(rows, idx.x[c][k])
-                append!(cols, idx.Δtc[c][k] * ones(Int, Nx))
-            end
+            append!(rows, idx.Δtc[c][k] * ones(Int, 1))
+            append!(cols, idx.Δtc[c][k] * ones(Int, 1))
         end
     end
-
-    append!(rows, idx.x[Nc][Nkb+Nkc])
-    append!(cols, idx.x[Nc][Nkb+Nkc])
 
     return collect(zip(rows, cols))
 end
 
 function objective_hessian_values(o::TimeWeightedQuadraticObjective, idx, H, z)
-    Q, Qf, x̄ = o.Q, o.Qf, o.x̄
+    Q, x̄ = o.Q, o.x̄
     Nx, Nkb, Nkc, Nc, Nu = idx.Nstates, idx.Nkb, idx.Nkc, idx.Nc, idx.Nu
 
     i = 0
-    ex = zeros(eltype(z), Nx)
     for c in 1:Nc
         for k in 1:Nkb
-            xₖ = @view z[idx.x[c][k]]
-            Δt = z[idx.Δtb[c][k]]
-
-            @. ex = xₖ - x̄
-
-            H[(1+i):(Nx+i)] .= diag(Q)
-            H[(1+i):(Nx+i)] .*= Δt
+            zi = (c - 1) * (Nkb + Nkc) + k
+            H[(1+i):(Nx+i)] .= diag(Q) .* zi
             i += Nx
 
-            mul!(view(H, (1+i):(Nx+i)), Q, ex)
-            i += Nx
+            H[(1+i):(1+i)] .= 2
+            i += 1
         end
 
         for k in (Nkb+1):(Nkb+Nkc)
-            xₖ = @view z[idx.x[c][k]]
-            Δt = z[idx.Δtc[c][k]]
+            zi = (c - 1) * (Nkb + Nkc) + k
+            H[(1+i):(Nx+i)] .= diag(Q) .* zi
+            i += Nx
 
-            @. ex = xₖ - x̄
-
-            if (c < Nc) || (k < Nkb + Nkc)
-                H[(1+i):(Nx+i)] .= diag(Q)
-                H[(1+i):(Nx+i)] .*= Δt
-                i += Nx
-
-                mul!(view(H, (1+i):(Nx+i)), Q, ex)
-                i += Nx
-            end
+            H[(1+i):(1+i)] .= 2
+            i += 1
         end
     end
 
-    H[(1+i):(Nx+i)] .= diag(Qf)
-    i += Nx
 end
 
 

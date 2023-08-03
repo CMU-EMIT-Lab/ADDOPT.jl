@@ -133,7 +133,7 @@ function step_RK4(f!, Xi, u, dt, t, zi)
     return Xf
 end
 
-function resample_vector_traj(t::Vector, traj::Vector{Vector}, t_new::Vector)
+function resample_vector_traj(t, traj, t_new)
     nx = length(traj[1])
     ret = []
 

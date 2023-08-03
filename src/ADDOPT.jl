@@ -71,6 +71,7 @@ struct AdditiveProblem{OB<:Objective,ID<:InputDynamics,TD<:TransferDynamics,PD<:
     sparsity_cache
 
     x₀::Vector{Float64}
+    ximin::Vector{Float64}
     x̄::Vector{Float64}
 
     final_constraint::Bool
@@ -78,8 +79,17 @@ struct AdditiveProblem{OB<:Objective,ID<:InputDynamics,TD<:TransferDynamics,PD<:
 
     cp::CachePackage
 
+    Δtb_min::Float64
+    Δtb_max::Float64
+    Δtc_min::Float64
+    Δtc_max::Float64
+
     function AdditiveProblem(process::Process{ID,TD,PD}, objective::OB,
-        Nkb, Nkc, Nc, x₀; x̄=nothing, Δtb=nothing, Δtc=nothing, final_constraint=false, hessian=true) where {OB<:Objective,ID<:InputDynamics,TD<:TransferDynamics,PD<:PropertyDynamics}
+        Nkb, Nkc, Nc, x₀; x̄=nothing, Δtb=nothing, Δtc=nothing, final_constraint=false, hessian=true, ximin=nothing,
+        Δtb_min=0.01,
+        Δtb_max=0.04,
+        Δtc_min=0.01,
+        Δtc_max=0.04) where {OB<:Objective,ID<:InputDynamics,TD<:TransferDynamics,PD<:PropertyDynamics}
         id, td, pd = process.input_dynamics, process.transfer_dynamics, process.property_dynamics
         idx = generate_z_indices(Nkb, Nkc, Nc, Nu(id), Nr(id), Ns(td), Nα(pd), Nc_eq(id), Nc_ineq(id), Δtb, Δtc, final_constraint)
 
@@ -100,12 +110,18 @@ struct AdditiveProblem{OB<:Objective,ID<:InputDynamics,TD<:TransferDynamics,PD<:
         con_jacobian_sparsity, sparsity_cache = constraint_jacobian_sparsity(idx, process, cp; Δtb=Δtb, Δtc=Δtc, final_constraint=final_constraint)
         println("Done with sparsity")
 
+        if isnothing(ximin)
+            ximin = x₀
+        end
+
         new{OB,ID,TD,PD}(process, objective, Δtb, Δtc, Nkb, Nkc, Nc,
             con_jacobian_sparsity,
             idx, sparsity_cache,
-            x₀, x̄,
+            x₀, ximin, x̄,
             final_constraint, hessian,
-            cp)
+            cp,
+            Δtb_min, Δtb_max,
+            Δtc_min, Δtc_max)
     end
 end
 
@@ -739,6 +755,10 @@ function optimize_trajectory(problem::AdditiveProblem;
     solver.options["hsllib"] = HSL_jll.libhsl_path
     solver.options["linear_solver"] = solv
 
+    if solv == "ma77"
+        solver.options["ma77_print_level"] = 2
+    end
+
     idx = problem.idx
     Nz, Nconstr = idx.Nz, idx.Nconstr
     Nx, Neq, Nineq = idx.Nstates, idx.Neq, idx.Nineq
@@ -752,15 +772,15 @@ function optimize_trajectory(problem::AdditiveProblem;
 
             for k in 1:Nkb
                 if isnothing(problem.Δtb)
-                    z₀[idx.Δtb[c][k]] = 0.02
+                    z₀[idx.Δtb[c][k]] = (problem.Δtb_min + problem.Δtb_max) / 2
                 end
-                z₀[idx.x[c][k]] .= isnothing(xg) ? problem.x̄ : xg #.+ randn(Nx)
-                z₀[idx.u[c][k]] .= isnothing(ug) ? input_min(id) : ug#(input_min(id) .+ input_max(id)) ./ 2
+                z₀[idx.x[c][k]] .= isnothing(xg) ? problem.x̄ : xg
+                z₀[idx.u[c][k]] .= isnothing(ug) ? input_min(id) : ug
             end
 
             for k in (Nkb+1):(Nkb+Nkc)
                 if isnothing(problem.Δtc)
-                    z₀[idx.Δtc[c][k]] = 0.02
+                    z₀[idx.Δtc[c][k]] = (problem.Δtc_min + problem.Δtc_max) / 2
                 end
                 z₀[idx.x[c][k]] .= problem.x̄
             end
@@ -809,18 +829,6 @@ function optimize_trajectory(problem::AdditiveProblem;
     @time MOI.eval_constraint_jacobian(problem, jt, z₀)
     @time MOI.eval_constraint_jacobian(problem, jt, z₀)
 
-
-    # println("ideal")
-    # display((sparse(ForwardDiff.hessian(z -> MOI.eval_objective(problem, z), z1))))
-    # # pretty_table(sparse(ForwardDiff.hessian(z -> MOI.eval_objective(problem, z), z₀)), noheader = true, crop = :none, formatters = ft_printf("%3.1e"))
-
-    # rs = [r for (r, c) in structure]
-    # cs = [c for (r, c) in structure]
-    # println("actual")
-    # display((sparse(rs, cs, H0)))
-    # # display(norm((sparse(ForwardDiff.hessian(z -> MOI.eval_objective(problem, z), z1)))[1:(end-2), 1:(end-2)] .- (sparse(rs, cs, H0))))
-    # # pretty_table(sparse(rs, cs, H0), noheader = true, crop = :none, formatters = ft_printf("%3.1e"))
-
     ncf = problem.final_constraint ? Nx : 0
     c_lb = repeat([zeros(Nx + Neq); ineq_min(id)], Nkb)
     c_ub = repeat([zeros(Nx + Neq); ineq_max(id)], Nkb)
@@ -830,7 +838,7 @@ function optimize_trajectory(problem::AdditiveProblem;
     c_l_cyc = vcat(c_lb, c_lc)
     c_u_cyc = vcat(c_ub, c_uc)
 
-    c_l = vcat(zeros(Nx), c_l_cyc, repeat(vcat(zeros(Nx), c_l_cyc), Nc - 1), zeros(ncf))
+    c_l = vcat(problem.ximin .- problem.x₀, c_l_cyc, repeat(vcat(zeros(Nx), c_l_cyc), Nc - 1), zeros(ncf))
     c_u = vcat(zeros(Nx), c_u_cyc, repeat(vcat(zeros(Nx), c_u_cyc), Nc - 1), zeros(ncf))
 
     nlp_bounds = MOI.NLPBoundsPair.(c_l, c_u)
@@ -849,8 +857,8 @@ function optimize_trajectory(problem::AdditiveProblem;
         for k in 1:Nkb
             if isnothing(problem.Δtb)
                 Δtb = z[idx.Δtb[c][k]]
-                MOI.add_constraint(solver, Δtb, MOI.LessThan(0.04))
-                MOI.add_constraint(solver, Δtb, MOI.GreaterThan(0.01))
+                MOI.add_constraint(solver, Δtb, MOI.LessThan(problem.Δtb_max))
+                MOI.add_constraint(solver, Δtb, MOI.GreaterThan(problem.Δtb_min))
             end
 
             uj = z[idx.u[c][k]]
@@ -865,8 +873,8 @@ function optimize_trajectory(problem::AdditiveProblem;
         for k in (Nkb+1):(Nkb+Nkc)
             if isnothing(problem.Δtc)
                 Δtc = z[idx.Δtc[c][k]]
-                MOI.add_constraint(solver, Δtc, MOI.LessThan(0.04))
-                MOI.add_constraint(solver, Δtc, MOI.GreaterThan(0.01))
+                MOI.add_constraint(solver, Δtc, MOI.LessThan(problem.Δtc_max))
+                MOI.add_constraint(solver, Δtc, MOI.GreaterThan(problem.Δtc_min))
             end
 
             xj = z[idx.x[c][k]]

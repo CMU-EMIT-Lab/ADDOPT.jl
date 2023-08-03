@@ -6,6 +6,7 @@ include("input_models/planar_gmaw_prescribed.jl")
 include("input_models/planar_heatsource_relaxed.jl")
 include("input_models/planar_heatsource_prescribed.jl")
 include("input_models/gmaw_prescribed.jl")
+include("input_models/null_input.jl")
 
 # Property models
 include("property_models/hardness.jl")
@@ -88,6 +89,18 @@ function WAAMHardnessPrescribedMotion(nx, ny, nz, l, k, ρ, cₚ, T∞, T₀, wi
     Tₗ = 1700.0 # K
 
     id = GMAWDynamicsPrescribed(nx, ny, nz, l, xₙ, yₙ, zₙ, ρ, cₚ, T∞, Tₗ, wire_diam, h∞, h₀, hₐᵣ, η, wire_diam, wire_diam, p̄)
+    td = VoxelEnergyFillDynamics(nx, ny, nz, l, xₙ, yₙ, zₙ, k, ρ, cₚ, T∞, T₀, wire_diam, h∞, h₀, Tmin, Tmax)
+    pd = HardnessDynamics(A, τ, n=n_voxels)
+
+    return Process(id, td, pd)
+end
+
+function WAAMHardnessCooling(nx, ny, nz, l, k, ρ, cₚ, T∞, T₀, wire_diam, h∞, h₀, hₐᵣ, η, Tmin, Tmax, p̄, A, τ)
+    xₙ, yₙ, zₙ = gen_xyz(nx, ny, nz, l)
+    n_voxels = nx * ny * nz
+    Tₗ = 1700.0 # K
+
+    id = NullInputDynamics()
     td = VoxelEnergyFillDynamics(nx, ny, nz, l, xₙ, yₙ, zₙ, k, ρ, cₚ, T∞, T₀, wire_diam, h∞, h₀, Tmin, Tmax)
     pd = HardnessDynamics(A, τ, n=n_voxels)
 
