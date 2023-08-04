@@ -18,6 +18,7 @@ include("transfer_models/newton_lumped.jl")
 include("transfer_models/planar_voxel_mass_temp.jl")
 include("transfer_models/planar_voxel_temp.jl")
 include("transfer_models/voxel_energy_fill.jl")
+include("transfer_models/voxel_energy.jl")
 
 struct Process{ID<:InputDynamics,TD<:TransferDynamics,PD<:PropertyDynamics}
     input_dynamics::ID
@@ -95,13 +96,13 @@ function WAAMHardnessPrescribedMotion(nx, ny, nz, l, k, ρ, cₚ, T∞, T₀, wi
     return Process(id, td, pd)
 end
 
-function WAAMHardnessCooling(nx, ny, nz, l, k, ρ, cₚ, T∞, T₀, wire_diam, h∞, h₀, hₐᵣ, η, Tmin, Tmax, p̄, A, τ)
+function WAAMHardnessCooling(nx, ny, nz, l, k, ρ, cₚ, T∞, T₀, wire_diam, h∞, h₀, hₐᵣ, η, Tmin, Tmax, p̄, A, τ, x)
     xₙ, yₙ, zₙ = gen_xyz(nx, ny, nz, l)
     n_voxels = nx * ny * nz
     Tₗ = 1700.0 # K
 
     id = NullInputDynamics()
-    td = VoxelEnergyFillDynamics(nx, ny, nz, l, xₙ, yₙ, zₙ, k, ρ, cₚ, T∞, T₀, wire_diam, h∞, h₀, Tmin, Tmax)
+    td = VoxelEnergyDynamics(nx, ny, nz, l, xₙ, yₙ, zₙ, k, ρ, cₚ, T∞, T₀, wire_diam, h∞, h₀, Tmin, Tmax, x)
     pd = HardnessDynamics(A, τ, n=n_voxels)
 
     return Process(id, td, pd)

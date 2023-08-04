@@ -26,10 +26,10 @@ function thermal_ic_to_property_final(problem::ThermalICProblem, E::Vector{Ty}):
     process = problem.process
     nvox = problem.nvox
 
-    xi::Vector{Ty} = [E; x; y0]
+    xi::Vector{Ty} = [E; y0]
     xf = inplace_solve_rk4(process, xi, Δt, Nk, 0.0, 0)
 
-    return xf[(2nvox+1):3nvox]
+    return xf[(nvox+1):2nvox]
 end
 
 function lsq_jac!(problem::ThermalICProblem, J::Matrix{Float64}, z::Vector{Float64})
@@ -45,12 +45,11 @@ function MOI.eval_objective(prob::ThermalICProblem, z)
 end
 
 function MOI.eval_objective_gradient(prob::ThermalICProblem, grad_f, z)
-    # y = thermal_ic_to_property_final(prob, z)
-    # e = @. y - prob.ȳ
-    # lsq_jac!(prob, prob.J, z)
+    y = thermal_ic_to_property_final(prob, z)
+    e = @. y - prob.ȳ
+    lsq_jac!(prob, prob.J, z)
 
-    # grad_f .= prob.J' * prob.Q * e
-    ForwardDiff.gradient!(grad_f, E -> MOI.eval_objective(prob, E), z)
+    grad_f .= prob.J' * prob.Q * e
 end
 
 function MOI.eval_constraint(prob::ThermalICProblem, c, z)
@@ -81,7 +80,7 @@ function MOI.eval_hessian_lagrangian(prob::ThermalICProblem, H, z, σ, μ)
 end
 
 function MOI.features_available(prob::ThermalICProblem)
-    return [:Grad, :Jac]#, :Hess]
+    return [:Grad, :Jac, :Hess]
 end
 
 MOI.initialize(prob::ThermalICProblem, features) = nothing
@@ -114,11 +113,11 @@ function optimize_thermal_ic(problem::ThermalICProblem;
     @time MOI.eval_objective_gradient(problem, gt, z₀)
     @time MOI.eval_objective_gradient(problem, gt, z₀)
 
-    # println("Checking lagrangian hessian...")
-    # structure = MOI.hessian_lagrangian_structure(problem)
-    # H0 = zeros(length(structure))
-    # @time MOI.eval_hessian_lagrangian(problem, H0, z₀, 1.0, μ0)
-    # @time MOI.eval_hessian_lagrangian(problem, H0, z₀, 1.0, μ0)
+    println("Checking lagrangian hessian...")
+    structure = MOI.hessian_lagrangian_structure(problem)
+    H0 = zeros(length(structure))
+    @time MOI.eval_hessian_lagrangian(problem, H0, z₀, 1.0, μ0)
+    @time MOI.eval_hessian_lagrangian(problem, H0, z₀, 1.0, μ0)
 
     nlp_bounds = MOI.NLPBoundsPair.([], [])
     block_data = MOI.NLPBlockData(nlp_bounds, problem, true)
