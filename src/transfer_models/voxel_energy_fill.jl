@@ -44,7 +44,7 @@ struct VoxelEnergyFillDynamics <: TransferDynamics
 end
 
 @inline Ns(td::VoxelEnergyFillDynamics)::Int = td.nx * td.ny * td.nz * 2
-state_min(td::VoxelEnergyFillDynamics) = zeros(Ns(td))
+state_min(td::VoxelEnergyFillDynamics) = -Inf * ones(Ns(td)) #zeros(Ns(td))
 state_max(td::VoxelEnergyFillDynamics) = Inf * ones(Ns(td))
 
 function dynamics_function!(td::VoxelEnergyFillDynamics, ds::AbstractVector{Ty}, s, t) where {Ty}
@@ -70,7 +70,7 @@ function dynamics_function!(td::VoxelEnergyFillDynamics, ds::AbstractVector{Ty},
     E = view(s, 1:N)
     x = view(s, (N+1):2N)
 
-    μ(x) = typeof(x) == Symbolics.Num ? 10.0 * (x - 1.0)^2 : (x > 1.0 ? 10.0 * (x - 1.0)^2 : 0.0)
+    μ(x) = typeof(x) == Symbolics.Num ? (3.3 * (x - 1.0))^3 : (x > 1.0 ? (3.3 * (x - 1.0))^3 : 0.0)
     K .= μ.(x)
 
     rcE = reshape(E, (nx, ny, nz))
