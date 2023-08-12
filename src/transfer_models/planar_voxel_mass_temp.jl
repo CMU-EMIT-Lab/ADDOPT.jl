@@ -50,7 +50,7 @@ end
 state_min(td::PlanarVoxelMassEnergyDynamics) = zeros(Ns(td))
 state_max(td::PlanarVoxelMassEnergyDynamics) = Inf * ones(Ns(td))
 
-function dynamics_function!(td::PlanarVoxelMassEnergyDynamics, ds::AbstractVector{Ty}, s, t) where {Ty}
+function dynamics_function!(td::PlanarVoxelMassEnergyDynamics, ds::AbstractVector{Ty}, s, t, zi) where {Ty}
     nrows, ncols = td.nrows, td.ncols
     l, w = td.l, td.w
     h∞, h₀ = td.h∞, td.h₀

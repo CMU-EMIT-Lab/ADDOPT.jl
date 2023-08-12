@@ -47,7 +47,7 @@ end
 state_min(td::VoxelEnergyFillDynamics) = -Inf * ones(Ns(td)) #zeros(Ns(td))
 state_max(td::VoxelEnergyFillDynamics) = Inf * ones(Ns(td))
 
-function dynamics_function!(td::VoxelEnergyFillDynamics, ds::AbstractVector{Ty}, s, t) where {Ty}
+function dynamics_function!(td::VoxelEnergyFillDynamics, ds::AbstractVector{Ty}, s, t, zi) where {Ty}
     nz, ny, nx = td.nz, td.ny, td.nx
     l = td.l
     h∞, h₀ = td.h∞, td.h₀

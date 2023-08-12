@@ -170,7 +170,7 @@ function combined_dynamics!(f, x, u, process::Process{ID,TD,PD}, t, zi) where {I
     dα = view(f, (Ns(td)+1):(Ns(td)+Nα(pd)))
     dr = view(f, (Ns(td)+Nα(pd)+1):(Ns(td)+Nα(pd)+Nr(id)))
 
-    dynamics_function!(td, ds, s, t)
+    dynamics_function!(td, ds, s, t, zi)
     input_function!(id, ds, r, u, t, zi) # always call second, additive
     dynamics_function!(pd, td, dα, α, s, t)
     dynamics_function!(id, dr, s, r, u, t, zi)
@@ -221,12 +221,12 @@ function collocation_constraint!(process::Process{ID,TD,PD}, r::AbstractVector{T
     # unlock(ẋₘ_cache_lock)
 
     combined_dynamics!(fₖ, xₖ, uₖ, process, t, zi)
-    combined_dynamics!(fₖ₊₁, xₖ₊₁, uₖ, process, t + Δt[1], zi)
+    combined_dynamics!(fₖ₊₁, xₖ₊₁, uₖ, process, t + Δt[1], zi + 1)
 
     xₘ .= @. 0.5 * (xₖ + xₖ₊₁) + (Δt[1] / 8.0) * (fₖ - fₖ₊₁)
     ẋₘ .= @. (3 / (2 * Δt[1])) * (xₖ₊₁ - xₖ) - 0.25 * (fₖ + fₖ₊₁)
 
-    combined_dynamics!(fₘ, xₘ, uₖ, process, t + Δt[1] / 2.0, zi)
+    combined_dynamics!(fₘ, xₘ, uₖ, process, t + Δt[1] / 2.0, zi + 0.5)
     r .= fₘ .- ẋₘ
 end
 

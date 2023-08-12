@@ -29,7 +29,7 @@ end
 state_min(td::PlanarVoxelTemperatureDynamics) = td.Tmin * ones(Ns(td))
 state_max(td::PlanarVoxelTemperatureDynamics) = td.Tmax * ones(Ns(td)) #Inf * ones(Ns(td))
 
-function dynamics_function!(td::PlanarVoxelTemperatureDynamics, ds::AbstractVector{Ty}, s, t) where {Ty}
+function dynamics_function!(td::PlanarVoxelTemperatureDynamics, ds::AbstractVector{Ty}, s, t, zi) where {Ty}
     n_rows, n_cols = td.nrows, td.ncols
     l, xₙ, zₙ = td.l, td.xₙ, td.zₙ
     k, ρ, cₚ, T∞ = td.k, td.ρ, td.cₚ, td.T∞

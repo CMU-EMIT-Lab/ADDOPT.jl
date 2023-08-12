@@ -43,10 +43,10 @@ struct VoxelEnergyDynamics <: TransferDynamics
 end
 
 @inline Ns(td::VoxelEnergyDynamics)::Int = td.nx * td.ny * td.nz
-state_min(td::VoxelEnergyDynamics) = zeros(Ns(td))
+state_min(td::VoxelEnergyDynamics) = -Inf * ones(Ns(td))
 state_max(td::VoxelEnergyDynamics) = Inf * ones(Ns(td))
 
-function dynamics_function!(td::VoxelEnergyDynamics, ds::AbstractVector{Ty}, s, t) where {Ty}
+function dynamics_function!(td::VoxelEnergyDynamics, ds::AbstractVector{Ty}, s, t, zi) where {Ty}
     nz, ny, nx = td.nz, td.ny, td.nx
     l = td.l
     h∞, h₀ = td.h∞, td.h₀
