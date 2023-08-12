@@ -194,31 +194,31 @@ function collocation_constraint!(process::Process{ID,TD,PD}, r::AbstractVector{T
     ẋₘ_cache_lock = cp.ẋₘ_cache_lock
 
     thread::Int = Threads.threadid()
-    lock(fₖ_cache_lock)
+    # lock(fₖ_cache_lock)
     fₖ = get!(fₖ_cache, (T, thread)) do
         zeros(T, Nx)
     end::Vector{T}
-    unlock(fₖ_cache_lock)
-    lock(fₖ₊₁_cache_lock)
+    # unlock(fₖ_cache_lock)
+    # lock(fₖ₊₁_cache_lock)
     fₖ₊₁ = get!(fₖ₊₁_cache, (T, thread)) do
         zeros(T, Nx)
     end::Vector{T}
-    unlock(fₖ₊₁_cache_lock)
-    lock(fₘ_cache_lock)
+    # unlock(fₖ₊₁_cache_lock)
+    # lock(fₘ_cache_lock)
     fₘ = get!(fₘ_cache, (T, thread)) do
         zeros(T, Nx)
     end::Vector{T}
-    unlock(fₘ_cache_lock)
-    lock(xₘ_cache_lock)
+    # unlock(fₘ_cache_lock)
+    # lock(xₘ_cache_lock)
     xₘ = get!(xₘ_cache, (T, thread)) do
         zeros(T, Nx)
     end::Vector{T}
-    unlock(xₘ_cache_lock)
-    lock(ẋₘ_cache_lock)
+    # unlock(xₘ_cache_lock)
+    # lock(ẋₘ_cache_lock)
     ẋₘ = get!(ẋₘ_cache, (T, thread)) do
         zeros(T, Nx)
     end::Vector{T}
-    unlock(ẋₘ_cache_lock)
+    # unlock(ẋₘ_cache_lock)
 
     combined_dynamics!(fₖ, xₖ, uₖ, process, t, zi)
     combined_dynamics!(fₖ₊₁, xₖ₊₁, uₖ, process, t + Δt[1], zi)
