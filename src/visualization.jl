@@ -43,7 +43,7 @@ function animate_measurement_history(Y, dt, n_rows, n_cols; path="animation_meas
 
 end
 
-function animate_3Dmeasurement_history_planar(Y, X, dt, nx, ny, nz; path="animation_measured3d.mp4", strid=1, width=1000, height=400, quantity="Measured Temperature K", scale=(300, 1800))
+function animate_3Dmeasurement_history_planar(Y, X, dt, nx, ny, nz; path="animation_measured3d.mp4", strid=1, width=1000, height=400, quantity="Measured Temperature K", scale=(300, 1800), l=1)
     N = nx * ny * nz
 
     p = Progress(length(Y) ÷ strid)
@@ -53,11 +53,11 @@ function animate_3Dmeasurement_history_planar(Y, X, dt, nx, ny, nz; path="animat
 
         xk = reshape(xk, (nx, ny, nz))
         T_arr = reshape(Tk, (nx, ny, nz))
-        T_arr = sum(T_arr.*xk, dims=2) ./ sum(xk, dims=2)
+        T_arr = sum(T_arr .* xk, dims=2) ./ sum(xk, dims=2)
         T_arr = reshape(T_arr, (nx, nz))'
         reverse!(T_arr, dims=2)
 
-        hm_T = heatmap(1:nx, 1:nz, T_arr, aspect_ratio=:equal, clim=scale, title=quantity)
+        hm_T = heatmap((1:nx) .* l, (1:nz) .* l, T_arr, aspect_ratio=:equal, clim=scale, xlabel="X (mm)", ylabel="Z (mm)", title=quantity)
         plot(hm_T, size=(width, height), fmt=:png)
 
         next!(p)
@@ -65,7 +65,7 @@ function animate_3Dmeasurement_history_planar(Y, X, dt, nx, ny, nz; path="animat
     gif(anim, path, fps=(1 / dt / strid))
 end
 
-function animate_3Dstate_history_planar(X, dt, nx, ny, nz; path="animation_state3d.mp4", strid=1, width=1000, height=1000)
+function animate_3Dstate_history_planar(X, dt, nx, ny, nz; path="animation_state3d.mp4", strid=1, width=1000, height=1000, l=1)
     N = nx * ny * nz
 
     p = Progress(length(X) ÷ strid)
@@ -79,12 +79,12 @@ function animate_3Dstate_history_planar(X, dt, nx, ny, nz; path="animation_state
         reverse!(Ek, dims=2)
 
         xk = reshape(xk, (nx, ny, nz))
-        xk = sum(xk, dims=2)
+        xk = sum(xk, dims=2) .* l
         xk = reshape(xk, (nx, nz))'
         reverse!(xk, dims=2)
 
-        hm_T = heatmap(1:nx, 1:nz, Ek, aspect_ratio=:equal, clim=(0, 100), title="Internal Energy (J)")
-        hm_x = heatmap(1:nx, 1:nz, xk, aspect_ratio=:equal, clim=(0, ny), title="Thickness (mm)")
+        hm_T = heatmap((1:nx) .* l, (1:nz) .* l, Ek, aspect_ratio=:equal, clim=(0, 100), xlabel="X (mm)", ylabel="Z (mm)", title="Internal Energy (J)")
+        hm_x = heatmap((1:nx) .* l, (1:nz) .* l, xk, aspect_ratio=:equal, clim=(0, ny * l), xlabel="X (mm)", ylabel="Z (mm)", title="Thickness (mm)")
         plot(hm_T, hm_x, layout=(2, 1), size=(width, height), fmt=:png)
 
         next!(p)
