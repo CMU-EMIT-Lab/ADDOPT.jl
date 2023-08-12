@@ -155,26 +155,34 @@ end
 
 
 struct TimeWeightedQuadraticObjective <: Objective
-    Q::Diagonal{Float64,Vector{Float64}}
-    x̄::Vector{Float64}
+    Q::Vector{Diagonal{Float64,Vector{Float64}}}
+    R::Diagonal{Float64,Vector{Float64}}
+    x̄::Vector{Vector{Float64}}
+    ū::Vector{Float64}
+    Δt̄b::Float64
 end
 
 function cost(o::TimeWeightedQuadraticObjective, z, idx)
-    Q, x̄ = o.Q, o.x̄
+    Q, R, x̄, ū, Δt̄b = o.Q, o.R, o.x̄, o.ū, o.Δt̄b
     Nx, Nkb, Nkc, Nc, Nu = idx.Nstates, idx.Nkb, idx.Nkc, idx.Nc, idx.Nu
 
     cost = 0.0
     ex = zeros(eltype(z), Nx)
+    eu = zeros(eltype(z), Nu)
     for c in 1:Nc
 
         for k in 1:Nkb
             zi = (c - 1) * (Nkb + Nkc) + k
             xₖ = @view z[idx.x[c][k]]
+            uₖ = @view z[idx.u[c][k]]
             Δt = z[idx.Δtb[c][k]]
 
-            @. ex = xₖ - x̄
-            cost += 0.5 * dot(ex, Q, ex) * zi
-            cost += Δt^2
+            @. ex = xₖ - x̄[zi]
+            @. eu = uₖ - ū
+
+            cost += 0.5 * dot(ex, Q[zi], ex)
+            cost += 0.5 * dot(eu, R, eu)
+            cost += 0.5 * (Δt-Δt̄b)^2
         end
 
         for k in (Nkb+1):(Nkb+Nkc)
@@ -182,10 +190,10 @@ function cost(o::TimeWeightedQuadraticObjective, z, idx)
             xₖ = @view z[idx.x[c][k]]
             Δt = z[idx.Δtc[c][k]]
 
-            @. ex = xₖ - x̄
+            @. ex = xₖ - x̄[zi]
 
-            cost += 0.5 * dot(ex, Q, ex) * zi
-            cost += Δt^2
+            cost += 0.5 * dot(ex, Q[zi], ex)
+            cost += 0.5 * Δt^2
         end
     end
 
@@ -193,23 +201,26 @@ function cost(o::TimeWeightedQuadraticObjective, z, idx)
 end
 
 function gradient(o::TimeWeightedQuadraticObjective, grad, z, idx)
-    Q, x̄ = o.Q, o.x̄
+    Q, R, x̄, ū, Δt̄b = o.Q, o.R, o.x̄, o.ū, o.Δt̄b
     Nx, Nkb, Nkc, Nc, Nu = idx.Nstates, idx.Nkb, idx.Nkc, idx.Nc, idx.Nu
     grad[:] .= 0
 
     ex = zeros(eltype(z), Nx)
+    eu = zeros(eltype(z), Nu)
     for c in 1:Nc
 
         for k in 1:Nkb
             zi = (c - 1) * (Nkb + Nkc) + k
             xₖ = @view z[idx.x[c][k]]
+            uₖ = @view z[idx.u[c][k]]
             Δt = z[idx.Δtb[c][k]]
 
-            @. ex = xₖ - x̄
-            ex .*= zi
+            @. ex = xₖ - x̄[zi]
+            @. eu = uₖ - ū
 
-            grad[idx.Δtb[c][k]] = 2Δt
-            mul!(view(grad, idx.x[c][k]), Q, ex)
+            mul!(view(grad, idx.x[c][k]), Q[zi], ex)
+            mul!(view(grad, idx.u[c][k]), R, eu)
+            grad[idx.Δtb[c][k]] = Δt-Δt̄b
         end
 
         for k in (Nkb+1):(Nkb+Nkc)
@@ -217,11 +228,10 @@ function gradient(o::TimeWeightedQuadraticObjective, grad, z, idx)
             xₖ = @view z[idx.x[c][k]]
             Δt = z[idx.Δtc[c][k]]
 
-            @. ex = xₖ - x̄
-            ex .*= zi
+            @. ex = xₖ - x̄[zi]
 
-            grad[idx.Δtc[c][k]] = 2Δt
-            mul!(view(grad, idx.x[c][k]), Q, ex)
+            grad[idx.Δtc[c][k]] = Δt
+            mul!(view(grad, idx.x[c][k]), Q[zi], ex)
         end
     end
 
@@ -236,6 +246,9 @@ function objective_hessian_structure(o::TimeWeightedQuadraticObjective, idx)
         for k in 1:Nkb
             append!(rows, idx.x[c][k])
             append!(cols, idx.x[c][k])
+
+            append!(rows, idx.u[c][k])
+            append!(cols, idx.u[c][k])
 
             append!(rows, idx.Δtb[c][k] * ones(Int, 1))
             append!(cols, idx.Δtb[c][k] * ones(Int, 1))
@@ -254,26 +267,29 @@ function objective_hessian_structure(o::TimeWeightedQuadraticObjective, idx)
 end
 
 function objective_hessian_values(o::TimeWeightedQuadraticObjective, idx, H, z)
-    Q, x̄ = o.Q, o.x̄
+    Q, R, x̄, ū = o.Q, o.R, o.x̄, o.ū
     Nx, Nkb, Nkc, Nc, Nu = idx.Nstates, idx.Nkb, idx.Nkc, idx.Nc, idx.Nu
 
     i = 0
     for c in 1:Nc
         for k in 1:Nkb
             zi = (c - 1) * (Nkb + Nkc) + k
-            H[(1+i):(Nx+i)] .= diag(Q) .* zi
+            H[(1+i):(Nx+i)] .= diag(Q[zi])
             i += Nx
 
-            H[(1+i):(1+i)] .= 2
+            H[(1+i):(Nu+i)] .= diag(R)
+            i += Nu
+
+            H[(1+i):(1+i)] .= 1
             i += 1
         end
 
         for k in (Nkb+1):(Nkb+Nkc)
             zi = (c - 1) * (Nkb + Nkc) + k
-            H[(1+i):(Nx+i)] .= diag(Q) .* zi
+            H[(1+i):(Nx+i)] .= diag(Q[zi])
             i += Nx
 
-            H[(1+i):(1+i)] .= 2
+            H[(1+i):(1+i)] .= 1
             i += 1
         end
     end
