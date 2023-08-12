@@ -26,7 +26,8 @@ struct VoxelEnergyDynamics <: TransferDynamics
     Tmin::Float64
     Tmax::Float64
 
-    x::Vector{Float64}
+    x::Vector{Vector{Float64}}
+    xcur::Vector{Float64}
 
     C_cache::Dict{Tuple{DataType,Int},Any}
     B::Vector{Float64}
@@ -37,8 +38,9 @@ struct VoxelEnergyDynamics <: TransferDynamics
         B = zeros(nx, ny, nz)
         B[:, :, 1] .= 1
         B = reshape(B, nx * ny * nz)
+        xc = zeros(size(x[1]))
 
-        return new(nx, ny, nz, l, xₙ, yₙ, zₙ, k, ρ, cₚ, T∞, T₀, wire_diam, h∞, h₀, Tmin, Tmax, x, C, B)
+        return new(nx, ny, nz, l, xₙ, yₙ, zₙ, k, ρ, cₚ, T∞, T₀, wire_diam, h∞, h₀, Tmin, Tmax, x, xc, C, B)
     end
 end
 
@@ -54,12 +56,17 @@ function dynamics_function!(td::VoxelEnergyDynamics, ds::AbstractVector{Ty}, s, 
     B = td.B
     k = td.k
     ρ, cₚ = td.ρ, td.cₚ
-    x = td.x
+    xar = td.x
+    x = td.xcur
 
     thread::Int = Threads.threadid()
     C = get!(td.C_cache, (Ty, thread)) do
         zeros(Ty, nz * ny * nx)
     end::Vector{Ty}
+
+    zint = floor(Int, zi)
+    @. x = (1 - (zi - zint)) * xar[zint] + (zi - zint) * xar[zint+1]
+    μ(xᵢ, xⱼ) = xᵢ > 0.0 ? min(xᵢ, xⱼ) / xᵢ : 1.0
 
     N = Ns(td)
     dE = view(ds, 1:N)
@@ -81,8 +88,8 @@ function dynamics_function!(td::VoxelEnergyDynamics, ds::AbstractVector{Ty}, s, 
     xⱼ = view(rcx, :, :, 2:nz)
     Cᵢ = view(rcC, :, :, 1:(nz-1))
     Cⱼ = view(rcC, :, :, 2:nz)
-    dEᵢ .+= (k / (l^2 * ρ * cₚ)) .* (Eⱼ .* xᵢ .- Eᵢ .* xⱼ)
-    Cᵢ .-= xⱼ
+    dEᵢ .+= (k / (l^2 * ρ * cₚ)) .* (Eⱼ .* μ.(xⱼ, xᵢ) .- Eᵢ .* μ.(xᵢ, xⱼ))
+    Cᵢ .-= μ(xᵢ, xⱼ)
 
     # From bottom
     dEᵢ = view(rcdE, :, :, 2:nz)
@@ -92,8 +99,8 @@ function dynamics_function!(td::VoxelEnergyDynamics, ds::AbstractVector{Ty}, s, 
     xⱼ = view(rcx, :, :, 1:(nz-1))
     Cᵢ = view(rcC, :, :, 2:nz)
     Cⱼ = view(rcC, :, :, 1:(nz-1))
-    dEᵢ .+= (k / (l^2 * ρ * cₚ)) .* (Eⱼ .* xᵢ .- Eᵢ .* xⱼ)
-    Cᵢ .-= xⱼ
+    dEᵢ .+= (k / (l^2 * ρ * cₚ)) .* (Eⱼ .* μ.(xⱼ, xᵢ) .- Eᵢ .* μ.(xᵢ, xⱼ))
+    Cᵢ .-= μ(xᵢ, xⱼ)
 
     # From in
     dEᵢ = view(rcdE, :, 2:ny, :)
@@ -103,8 +110,8 @@ function dynamics_function!(td::VoxelEnergyDynamics, ds::AbstractVector{Ty}, s, 
     xⱼ = view(rcx, :, 1:(ny-1), :)
     Cᵢ = view(rcC, :, 2:ny, :)
     Cⱼ = view(rcC, :, 1:(ny-1), :)
-    dEᵢ .+= (k / (l^2 * ρ * cₚ)) .* (Eⱼ .* xᵢ .- Eᵢ .* xⱼ)
-    Cᵢ .-= xⱼ
+    dEᵢ .+= (k / (l^2 * ρ * cₚ)) .* (Eⱼ .* μ.(xⱼ, xᵢ) .- Eᵢ .* μ.(xᵢ, xⱼ))
+    Cᵢ .-= μ(xᵢ, xⱼ)
 
     # From out
     dEᵢ = view(rcdE, :, 1:(ny-1), :)
@@ -114,8 +121,8 @@ function dynamics_function!(td::VoxelEnergyDynamics, ds::AbstractVector{Ty}, s, 
     xⱼ = view(rcx, :, 2:ny, :)
     Cᵢ = view(rcC, :, 1:(ny-1), :)
     Cⱼ = view(rcC, :, 2:ny, :)
-    dEᵢ .+= (k / (l^2 * ρ * cₚ)) .* (Eⱼ .* xᵢ .- Eᵢ .* xⱼ)
-    Cᵢ .-= xⱼ
+    dEᵢ .+= (k / (l^2 * ρ * cₚ)) .* (Eⱼ .* μ.(xⱼ, xᵢ) .- Eᵢ .* μ.(xᵢ, xⱼ))
+    Cᵢ .-= μ(xᵢ, xⱼ)
 
     # From left
     dEᵢ = view(rcdE, 2:nx, :, :)
@@ -125,8 +132,8 @@ function dynamics_function!(td::VoxelEnergyDynamics, ds::AbstractVector{Ty}, s, 
     xⱼ = view(rcx, 1:(nx-1), :, :)
     Cᵢ = view(rcC, 2:nx, :, :)
     Cⱼ = view(rcC, 1:(nx-1), :, :)
-    dEᵢ .+= (k / (l^2 * ρ * cₚ)) .* (Eⱼ .* xᵢ .- Eᵢ .* xⱼ)
-    Cᵢ .-= xⱼ
+    dEᵢ .+= (k / (l^2 * ρ * cₚ)) .* (Eⱼ .* μ.(xⱼ, xᵢ) .- Eᵢ .* μ.(xᵢ, xⱼ))
+    Cᵢ .-= μ(xᵢ, xⱼ)
 
     # From right
     dEᵢ = view(rcdE, 1:(nx-1), :, :)
@@ -136,8 +143,8 @@ function dynamics_function!(td::VoxelEnergyDynamics, ds::AbstractVector{Ty}, s, 
     xⱼ = view(rcx, 2:nx, :, :)
     Cᵢ = view(rcC, 1:(nx-1), :, :)
     Cⱼ = view(rcC, 2:nx, :, :)
-    dEᵢ .+= (k / (l^2 * ρ * cₚ)) .* (Eⱼ .* xᵢ .- Eᵢ .* xⱼ)
-    Cᵢ .-= xⱼ
+    dEᵢ .+= (k / (l^2 * ρ * cₚ)) .* (Eⱼ .* μ.(xⱼ, xᵢ) .- Eᵢ .* μ.(xᵢ, xⱼ))
+    Cᵢ .-= μ(xᵢ, xⱼ)
 
     dE .+= h∞ .* C .* (T∞ .* x .* l^2 .- E ./ (ρ * l * cₚ)) # Convection to environment
 
@@ -154,5 +161,5 @@ function temperature!(td::VoxelEnergyDynamics, T, s)
     E = view(s, 1:N)
     x = td.x
 
-    map!((E, x) -> E / (td.l^3 * td.ρ * td.cₚ) + (1.0 - x) * 293.15, T, E, x)
+    map!((E, x) -> x > 0.0 ? E / (td.l^3 * td.ρ * td.cₚ) / x : 0.0, T, E, x)
 end

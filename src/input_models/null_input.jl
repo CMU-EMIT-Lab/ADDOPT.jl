@@ -18,5 +18,5 @@ state_max(id::NullInputDynamics) = []
 function dynamics_function!(id::NullInputDynamics, dr::AbstractVector{Ty}, s, r, u, t, zi) where {Ty}
 end
 
-function input_function!(id::NullInputDynamics, ds::AbstractVector{Ty}, r, u, t, zi) where {Ty}
+function input_function!(id::NullInputDynamics, ds::AbstractVector{Ty}, r, u, t, zi, Δt) where {Ty}
 end

@@ -43,7 +43,7 @@ function dynamics_function!(id::PlanarHeatsourcePrescribedMotionDynamics, dr::Ab
 
 end
 
-function input_function!(id::PlanarHeatsourcePrescribedMotionDynamics, ds::AbstractVector{Ty}, r, u, t, zi) where {Ty}
+function input_function!(id::PlanarHeatsourcePrescribedMotionDynamics, ds::AbstractVector{Ty}, r, u, t, zi, Δt) where {Ty}
     dT = ds
     n_rows, n_cols = id.nrows, id.ncols
     P = u[1]

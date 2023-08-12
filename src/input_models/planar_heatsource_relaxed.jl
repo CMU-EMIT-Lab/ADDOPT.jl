@@ -62,7 +62,7 @@ function dynamics_function!(id::PlanarHeatsourceDynamics, dr::AbstractVector{Ty}
     dr[2] = vz
 end
 
-function input_function!(id::PlanarHeatsourceDynamics, ds::AbstractVector{Ty}, r, u, t, zi) where {Ty}
+function input_function!(id::PlanarHeatsourceDynamics, ds::AbstractVector{Ty}, r, u, t, zi, Δt) where {Ty}
     dT = ds
     l, xₙ, zₙ, σ = id.l, id.xₙ, id.zₙ, id.σ
     nvox = id.nrows * id.ncols

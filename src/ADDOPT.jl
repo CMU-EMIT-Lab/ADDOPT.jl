@@ -159,7 +159,7 @@ function generate_z_indices(Nkb, Nkc, Nc, Nu, Nr, Ns, Nα, Neq, Nineq, Δtb, Δt
     return (Nz=Nz, Nstates=Nstates, u=u, x=x, Δtb=Δtb, Δtc=Δtc, Nconstr=Nconstr, Nkb=Nkb, Nkc=Nkc, Nc=Nc, Nu=Nu, Neq=Neq, Nineq=Nineq, Nconb=Nconb, Nconc=Nconc)
 end
 
-function combined_dynamics!(f, x, u, process::Process{ID,TD,PD}, t, zi) where {ID,TD,PD}
+function combined_dynamics!(f, x, u, process::Process{ID,TD,PD}, t, zi, Δt) where {ID,TD,PD}
     td, pd, id = process.transfer_dynamics, process.property_dynamics, process.input_dynamics
 
     s = view(x, 1:Ns(td))
@@ -171,7 +171,7 @@ function combined_dynamics!(f, x, u, process::Process{ID,TD,PD}, t, zi) where {I
     dr = view(f, (Ns(td)+Nα(pd)+1):(Ns(td)+Nα(pd)+Nr(id)))
 
     dynamics_function!(td, ds, s, t, zi)
-    input_function!(id, ds, r, u, t, zi) # always call second, additive
+    input_function!(id, ds, r, u, t, zi, Δt) # always call second, additive
     dynamics_function!(pd, td, dα, α, s, t)
     dynamics_function!(id, dr, s, r, u, t, zi)
 end
@@ -220,13 +220,13 @@ function collocation_constraint!(process::Process{ID,TD,PD}, r::AbstractVector{T
     end::Vector{T}
     # unlock(ẋₘ_cache_lock)
 
-    combined_dynamics!(fₖ, xₖ, uₖ, process, t, zi)
-    combined_dynamics!(fₖ₊₁, xₖ₊₁, uₖ, process, t + Δt[1], zi + 1)
+    combined_dynamics!(fₖ, xₖ, uₖ, process, t, zi, Δt[1])
+    combined_dynamics!(fₖ₊₁, xₖ₊₁, uₖ, process, t + Δt[1], zi + 1, Δt[1])
 
     xₘ .= @. 0.5 * (xₖ + xₖ₊₁) + (Δt[1] / 8.0) * (fₖ - fₖ₊₁)
     ẋₘ .= @. (3 / (2 * Δt[1])) * (xₖ₊₁ - xₖ) - 0.25 * (fₖ + fₖ₊₁)
 
-    combined_dynamics!(fₘ, xₘ, uₖ, process, t + Δt[1] / 2.0, zi + 0.5)
+    combined_dynamics!(fₘ, xₘ, uₖ, process, t + Δt[1] / 2.0, zi + 0.5, Δt[1])
     r .= fₘ .- ẋₘ
 end
 

@@ -27,32 +27,28 @@ struct GMAWDynamicsPrescribed <: InputDynamics
     rₚ::Float64
     rₘ::Float64
 
-    # x̄::Interpolations.Extrapolation
-    # ȳ::Interpolations.Extrapolation
-    # z̄::Interpolations.Extrapolation
-    # t̄::Vector{Float64}
     p̄::Vector{Vector{Float64}}
 
-    Fp_cache::Dict{Tuple{DataType, Int},Any}
-    Fm_cache::Dict{Tuple{DataType, Int},Any}
+    x::Vector{Vector{Float64}}
+    xcur::Vector{Float64}
 
-    function GMAWDynamicsPrescribed(nx, ny, nz, l, xₙ, yₙ, zₙ, ρ, cₚ, T∞, Tₗ, wire_diam, h∞, h₀, hₐᵣ, η, rₚ, rₘ, p̄)#, t̄)
-        Fp = Dict{Tuple{DataType, Int},Any}()
-        Fm = Dict{Tuple{DataType, Int},Any}()
+    Fp_cache::Dict{Tuple{DataType,Int},Any}
+    Fm_cache::Dict{Tuple{DataType,Int},Any}
 
-        # x̄ = linear_interpolation(t̄, [p[1] for p in p̄], extrapolation_bc=Flat())
-        # ȳ = linear_interpolation(t̄, [p[2] for p in p̄], extrapolation_bc=Flat())
-        # z̄ = linear_interpolation(t̄, [p[3] for p in p̄], extrapolation_bc=Flat())
+    function GMAWDynamicsPrescribed(nx, ny, nz, l, xₙ, yₙ, zₙ, ρ, cₚ, T∞, Tₗ, wire_diam, h∞, h₀, hₐᵣ, η, rₚ, rₘ, p̄, x)#, t̄)
+        Fp = Dict{Tuple{DataType,Int},Any}()
+        Fm = Dict{Tuple{DataType,Int},Any}()
 
-        # return new(nx, ny, nz, l, xₙ, yₙ, zₙ, ρ, cₚ, T∞, Tₗ, wire_diam, h∞, h₀, hₐᵣ, η, rₚ, rₘ, x̄, ȳ, z̄, t̄, Fp, Fm)
-        return new(nx, ny, nz, l, xₙ, yₙ, zₙ, ρ, cₚ, T∞, Tₗ, wire_diam, h∞, h₀, hₐᵣ, η, rₚ, rₘ, p̄, Fp, Fm)
+        xc = zeros(size(x[1]))
+
+        return new(nx, ny, nz, l, xₙ, yₙ, zₙ, ρ, cₚ, T∞, Tₗ, wire_diam, h∞, h₀, hₐᵣ, η, rₚ, rₘ, p̄, x, xc, Fp, Fm)
     end
 end
 
 Nu(id::GMAWDynamicsPrescribed)::Int = 1 # WFS (m/s for speeds)
 Nr(id::GMAWDynamicsPrescribed)::Int = 0
 
-input_min(id::GMAWDynamicsPrescribed) = [0.025] # vx, vz, trim, WFS (m/s for speeds) # second gausshess constrained vx to 10 mm/s
+input_min(id::GMAWDynamicsPrescribed) = [0.025] # WFS (m/s for speeds)
 input_max(id::GMAWDynamicsPrescribed) = [0.100]
 input_idle(id::GMAWDynamicsPrescribed) = [0.0]
 
@@ -73,9 +69,6 @@ function input_function!(id::GMAWDynamicsPrescribed, ds::AbstractVector{Ty}, r, 
     ρ, cₚ, T∞, wire_diam = id.ρ, id.cₚ, id.T∞, id.wire_diam
     h∞, h₀, hₐᵣ, η, rₚ, rₘ = id.h∞, id.h₀, id.hₐᵣ, id.η, id.rₚ, id.rₘ
 
-    # xₜ::Float64 = typeof(t) == Symbolics.Num ? l : id.x̄(t)
-    # yₜ::Float64 = typeof(t) == Symbolics.Num ? l : id.ȳ(t)
-    # zₜ::Float64 = typeof(t) == Symbolics.Num ? l : id.z̄(t)
     xₜ = id.p̄[zi][1]
     yₜ = id.p̄[zi][2]
     zₜ = id.p̄[zi][3]

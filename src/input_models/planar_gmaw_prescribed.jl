@@ -67,7 +67,7 @@ function dynamics_function!(id::PlanarGMAWDynamicsPrescribed, dr::AbstractVector
     dr[1] = γᵣ * (r̄ₘₚ - rₘₚ)
 end
 
-function input_function!(id::PlanarGMAWDynamicsPrescribed, ds::AbstractVector{Ty}, r, u, t, zi) where {Ty}
+function input_function!(id::PlanarGMAWDynamicsPrescribed, ds::AbstractVector{Ty}, r, u, t, zi, Δt) where {Ty}
     N = length(ds) ÷ 2
     dE = view(ds, 1:N)
     dm = view(ds, (N+1):2N)

@@ -8,7 +8,7 @@ function dynamics_function!(id::UniformPowerDynamics, dr::AbstractVector{Ty}, s,
 
 end
 
-function input_function!(id::UniformPowerDynamics, ds::AbstractVector{Ty}, r, u, t, zi) where Ty
+function input_function!(id::UniformPowerDynamics, ds::AbstractVector{Ty}, r, u, t, zi, Δt) where Ty
     ds[1] += u[1] / (id.m * id.cₚ)
 end
 
