@@ -84,10 +84,10 @@ function rollout(process::Process, x₀, U, Nkb, Nkc, Nc, Δtb, Δtc; free_time=
         zi = (c - 1) * (Nkb + Nkc)
         Xb = solve_RK4(f!, x0, U[c], Δtb, Nkb, t, zi)
         t += Δtb * Nkb
-        Xc = solve_RK4(f!, step_RK4(f!, Xb[end], U[c][end], Δtc, t, zi + Nkb), [input_idle(process.input_dynamics) for k in 1:Nkc], Δtc, Nkc, t, zi + Nkb)
+        Xc = solve_RK4(f!, step_RK4(f!, Xb[end], U[c][end], Δtb, t, zi + Nkb), [input_idle(process.input_dynamics) for k in 1:Nkc], Δtc, Nkc, t, zi + Nkb)
         t += Δtc * Nkc
         push!(X, vcat(Xb, Xc))
-        x0 = copy(Xc[end])
+        x0 = step_RK4(f!, Xc[end], input_idle(process.input_dynamics), Δtc, t, zi + Nkb + Nkc)
     end
 
     return X
