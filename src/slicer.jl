@@ -28,7 +28,7 @@ function gen_knots(layers, Nkb, Nkc, Nc)
         append!(p̄, gen_knots(points, Nkb))
 
         if c < Nc
-            append!(p̄, gen_knots([points[end], layers[c+1][1]], Nkc))
+            append!(p̄, [p̄[end] for k in 1:Nkc])
         else
             append!(p̄, [points[end] for k in 1:Nkc])
         end
@@ -37,14 +37,17 @@ function gen_knots(layers, Nkb, Nkc, Nc)
     return p̄
 end
 
-function gen_fill_ref(p̄, xₙ, yₙ, zₙ; radius=0.0025)
+function gen_fill_ref(p̄, xₙ, yₙ, zₙ; radius=0.0025, l=0.001)
     Nkb = length(p̄)
-    x = [zeros(Int, length(xₙ)) for k in 1:Nkb]
+    x = [zeros(length(xₙ)) for k in 1:Nkb]
 
     for k in 2:Nkb
-        x[k] .= x[k-1]
-        idx = findall(h -> h <= 0.0, norm.(eachcol([xₙ'; yₙ'; zₙ'] .- p̄[k])) .- radius)
-        x[k][idx] .= k
+        # x[k] .= x[k-1]
+        # idx = findall(h -> h <= 0.0, )
+        # x[k][idx] .= k
+
+        x[k] .= map(h -> clamp(((radius + l / 2) - h) / l, 0.0, 1.0), norm.(eachcol([xₙ'; yₙ'; zₙ'] .- p̄[k])))
+        x[k] .= max.(x[k], x[k-1])
     end
 
     return x
