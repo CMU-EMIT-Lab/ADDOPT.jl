@@ -1,6 +1,6 @@
 include("ADDOPT.jl")
 using LinearAlgebra
-using .ADDOPT: AdditiveProblem, QuadraticObjective, TimeWeightedQuadraticObjective, optimize_trajectory, generate_wall_z₀, temperature!, WAAMPrescribedMotion, WAAMHardnessPrescribedMotion, animate_3Dmeasurement_history_planar, animate_3Dstate_history_planar, gen_knots, gen_fill_ref, gen_xyz, rollout, marshall_z, ThermalICProblem, optimize_thermal_ic, resample_vector_traj, WAAMHardnessCooling
+using .ADDOPT: AdditiveProblem, QuadraticObjective, TimeWeightedQuadraticObjective, optimize_trajectory, generate_wall_z₀, temperature!, WAAMPrescribedMotion, WAAMHardnessPrescribedMotion, animate_3Dmeasurement_history_planar, animate_3Dstate_history_planar, gen_knots, gen_fill_ref, gen_xyz, rollout, marshall_z, ThermalICProblem, optimize_thermal_ic, resample_vector_traj, WAAMHardnessCooling, constraints!, thermal_ic_to_property_final
 using Plots
 using JLD2
 
@@ -22,29 +22,33 @@ T₀ = 295.0 # K
 wire_diam = 0.001143 # m, aka 0.045in
 Tₗ = 1784.0 # K, liquidus
 
-nx = 10#50
-ny = 5
-nz = 3
+nx = 25
+ny = 4
+nz = 4
 nvox = nz * ny * nx
 
-Nkb = 100#500
-Nkc = 25
-Nc = 1
+Nkb = 100
+Nkc = 200
+Nc = 3
 Δtb = 0.02
 Δtc = 0.02
 
 Tmin = T₀
 Tmax = 3000.0 # K
 
-l = 0.001 # m, aka 1mm
+l = 0.002 # m, aka 2mm
 
 xₙ, yₙ, zₙ = gen_xyz(nx, ny, nz, l)
 
-layers = [[[3l; (ny + 1) / 2 * l; 1l], [(nx - 2) * l; (ny + 1) / 2 * l; 1l]], [[3l; (ny + 1) / 2 * l; 1l], [(nx - 2) * l; (ny + 1) / 2 * l; 1l]]]
+layers = [[[3l; (ny + 1) / 2 * l; 1l - l / 2], [(nx - 2) * l; (ny + 1) / 2 * l; 1l - l / 2]],
+    [[(nx - 2) * l; (ny + 1) / 2 * l; 2l - l / 2], [3l; (ny + 1) / 2 * l; 2l - l / 2]],
+    [[3l; (ny + 1) / 2 * l; 3l - l / 2], [(nx - 2) * l; (ny + 1) / 2 * l; 3l - l / 2]]]#,
+#[[(nx - 2) * l; (ny + 1) / 2 * l; 4l], [3l; (ny + 1) / 2 * l; 4l]]]
 p̄ = gen_knots(layers, Nkb, Nkc, Nc)
-fill_ref = gen_fill_ref(p̄, xₙ, yₙ, zₙ; radius=2.1e-3)
+fill_ref = gen_fill_ref(p̄, xₙ, yₙ, zₙ; radius=3.0e-3, l=l)
 
-x̄ = [clamp.(Float64.(f), 0.0, 1.0) for f in fill_ref]
+x̄ = copy(fill_ref)
+display(reshape(x̄[end], (nx, ny, nz)))
 
 process = WAAMPrescribedMotion(nx, ny, nz, l, k, ρ, cₚ, T∞, T₀, wire_diam, h∞, h₀, hₐᵣ, η, Tmin, Tmax, p̄)
 
@@ -56,54 +60,66 @@ function temperature(X, N)
     return T
 end
 
-x₀ = zeros(2nvox)
-ȳ = 0.1
+ȳ = 0.2
+if length(ARGS) ≥ 1
+    global ȳ = parse(Float64, ARGS[1])
+end
+xref = copy(x̄[end])
+xref[xref.>0] .= 1.0
+Nkic = 1000
 Qic = 10.0 * Diagonal(ones(nvox))
-Eₘᵢₙ = 1000.0 * (l^3 * ρ * cₚ) * x̄[end]
-Eₘₐₓ = Tₗ * (l^3 * ρ * cₚ) * x̄[end]
+Eₘᵢₙ = 1000.0 * (l^3 * ρ * cₚ) * xref
+Eₘₐₓ = Tₗ * (l^3 * ρ * cₚ) * xref
 J = zeros(nvox, nvox)
-process2 = WAAMHardnessCooling(nx, ny, nz, l, k, ρ, cₚ, T∞, T₀, wire_diam, h∞, h₀, hₐᵣ, η, Tmin, Tmax, p̄, A, τ)
-icprob = ThermalICProblem(process2, nvox, x̄[end], zeros(nvox), Eₘᵢₙ, Eₘₐₓ, Δtc, 500, ȳ * x̄[end], Qic, J)
-Ei = optimize_thermal_ic(icprob; tol=1e-5, c_tol=1e-5)
+display(reshape(xref, (nx,ny,nz)))
+process2 = WAAMHardnessCooling(nx, ny, nz, l, k, ρ, cₚ, T∞, T₀, wire_diam, h∞, h₀, hₐᵣ, η, Tmin, Tmax, p̄, A, τ, xref)
+icprob = ThermalICProblem(process2, nvox, xref, zeros(nvox), Eₘᵢₙ, Eₘₐₓ, Δtc, Nkic, ȳ * xref, Qic, J)
+Ei = nothing
+if isfile("ic_waam_Ei_$(ȳ).jld2")
+    global Ei = load_object("ic_waam_Ei_$(ȳ).jld2")
+else
+    global Ei = optimize_thermal_ic(icprob; tol=1e-6, c_tol=1e-6, max_iter=100)
+    save_object("ic_waam_Ei_$(ȳ).jld2", Ei)
+end
+yg = thermal_ic_to_property_final(icprob, Ei)
+display(reshape(yg, (nx, ny, nz)))
+display(reshape(Ei ./ (ρ * cₚ * l^3), (nx, ny, nz)))
 
-# ȳ = 0.1
-# Qic = Diagonal([1e-4 * ones(nvox); 1e-2 * ones(nvox); 1e2 * ones(nvox)])
-# Qicf = 10 * Qic
-# x̄ic = [T∞ * (l^3 * ρ * cₚ) * x̄[end]; x̄[end]; ȳ * x̄[end]]
+Q = [Diagonal([10 * exp(-2*(zi / (Nkb + Nkc))) * ones(nvox); 10 * exp(-2*(zi / (Nkb + Nkc))) * ones(nvox)]) for zi in ((Nkb+Nkc)*Nc):-1:1]
+x₀ = zeros(2nvox)
+xg = [[Ei .* x; x] for x in x̄]
+R = Diagonal([5e-2])
+ū = [0.0677]
+Δt̄b = 0.076
+objective = TimeWeightedQuadraticObjective(Q, R, xg, ū, Δt̄b)
+problem = AdditiveProblem(process, objective, Nkb, Nkc, Nc, x₀, x̄=xg[end], Δtb=nothing, Δtc=nothing, final_constraint=false, hessian=false,
+    Δtb_min=0.04, Δtb_max=0.12,
+    Δtc_min=0.005, Δtc_max=0.10)
 
-# Δtic = 0.02
-# x0icmin = [1000.0 * (l^3 * ρ * cₚ) * x̄[end]; x̄[end]; zeros(nvox)]
-# x0icmax = [1750.0 * (l^3 * ρ * cₚ) * x̄[end]; x̄[end]; zeros(nvox)]
-# x0icmid = (x0icmin + x0icmax) / 2
-# x0icguess = [900.0 * (l^3 * ρ * cₚ) * x̄[end]; x̄[end]; zeros(nvox)]
+X0 = [[[(l^3 * ρ * cₚ) * (600.0 + (Tₗ - 600.0) * (i < Nkb ? i / Nkb : (Nkc - (i - Nkb)) / Nkc)) * x; x] for (i, x) in enumerate(x̄[((c-1)*(Nkb+Nkc)+1):(c*(Nkb+Nkc))])] for c in 1:Nc]
+U0 = [[[0.067] for k in 1:Nkb] for c in 1:Nc]
+# X0 = rollout(process, x₀, U0, Nkb, Nkc, Nc, 0.075, 0.075)
+# X0 = [[x .+ rand(2nvox)./10 for x in X] for X in X0]
+z0 = marshall_z(problem.idx, X0, U0, 0.075, 0.08; free_time=true)
 
-# process3 = WAAMHardnessCooling(nx, ny, nz, l, k, ρ, cₚ, T∞, T₀, wire_diam, h∞, h₀, hₐᵣ, η, Tmin, Tmax, p̄, A, τ)
-# icobj = QuadraticObjective(Qic, Diagonal([1.0]), Qicf, x̄ic, [0.0])
-# icprob = AdditiveProblem(process3, icobj, 1, 399, 1, x0icmax; x̄=x̄ic, Δtb=Δtic, Δtc=Δtic, ximin=x0icmin)
+display(reshape(X0[end][end][1:nvox] ./ (ρ * cₚ * l^3), (nx, ny, nz)))
+display(reshape(X0[end][end][(nvox+1):2nvox], (nx, ny, nz)))
 
-# # X0ic = [[x0icmid * (1 - α) + α * x̄ic for α in range(0, 1, length=400)],]
-# X0ic = [[x0icguess for k in 1:400],]
-# U0ic = [[0.0],]
-# z0ic = marshall_z(icprob.idx, X0ic, U0ic, Δtic, Δtic; free_time=false)
-# zic, Xic, Uic, Δtic = optimize_trajectory(icprob; z₀=z0ic)#; solv="ma77")
-# Ei = Xic[1][(nvox+1):2nvox]
+if isfile("traj_waam_z_$(ȳ).jld2")
+    global z0 = load_object("traj_waam_z_$(ȳ).jld2")
+end
 
-Q = Diagonal([1e-2 * ones(nvox); 20e-2 * ones(nvox)])
-xg = [Ei; x̄[end]]
-objective = TimeWeightedQuadraticObjective(Q, xg)
-problem = AdditiveProblem(process, objective, Nkb, Nkc, Nc, x₀, x̄=xg, Δtb=nothing, Δtc=nothing, final_constraint=false, hessian=false,
-    Δtb_min=0.01, Δtb_max=0.04,
-    Δtc_min=0.01, Δtc_max=0.04)
-
-X0 = [[[(l^3 * ρ * cₚ) * T∞ * clamp.(x .- 0.4, 0.0, 1.0); clamp.(x .- 0.4, 0.0, 1.0)] for x in x̄]]
-U0 = [0.030 * ones(Nkb)]
-z0 = marshall_z(problem.idx, X0, U0, Δtb, Δtc; free_time=true)
-
-z, X, U, Δt = optimize_trajectory(problem; max_iter=10_000, tol=1e-5, c_tol=1.0e-5, z₀=z0, solv="ma97")
-Y = [temperature(x, nvox) for x in X]
-
+z, X, U, Δt = optimize_trajectory(problem; max_iter=800, tol=1e-5, c_tol=1.0e-5, z₀=z0, solv="ma97")
 t = cumsum(Δt)
-save_object("traj_waam3d13_hardness_prescribed.jld2", z)
+save_object("traj_waam_z_$(ȳ).jld2", z)
+save_object("traj_waam_X_$(ȳ).jld2", X)
+save_object("traj_waam_U_$(ȳ).jld2", U)
+save_object("traj_waam_t_$(ȳ).jld2", t)
+
+# z = load_object("traj_waam_z_$(ȳ).jld2")
+# X = load_object("traj_waam_X_$(ȳ).jld2")
+# U = load_object("traj_waam_U_$(ȳ).jld2")
+# t = load_object("traj_waam_t_$(ȳ).jld2")
 
 slow_fac = 20
 Δt_sim = Δtb / slow_fac
@@ -118,19 +134,23 @@ X_sim = resample_vector_traj(t, X, t_sim)
 # Append for final cooling, to time and input
 
 X_sim = rollout(process2, zeros(3nvox), U_sim, Nk_sim, Δt_sim)
-animate_3Dstate_history_planar(X_sim, Δt_sim, nx, ny, nz; path="animation_state3d13_hardness_optimized.mp4", strid=slow_fac)
-Y = [temperature(x, nvox) for x in X_sim]
-animate_3Dmeasurement_history_planar(Y, X_sim, Δt_sim, nx, ny, nz; path="animation_measured3d13_hardness_optimized.mp4", strid=slow_fac)
-Y = [x[(2nvox+1):3nvox] for x in X_sim]
-animate_3Dmeasurement_history_planar(Y, X_sim, Δt_sim, nx, ny, nz; path="animation_measured_frac_3d13_hardness_optimized.mp4", strid=slow_fac, quantity="Fraction Transformed", scale=(0, 1))
-
-# 11 0.4 bad objectives
-# 12 0.4
-# 13 0.1
+animate_3Dstate_history_planar(X_sim, Δt_sim, nx, ny, nz; path="animation_waam_states_$(ȳ).mp4", strid=slow_fac, l=2)
+Y_temp = [temperature(x, nvox) for x in X_sim]
+animate_3Dmeasurement_history_planar(Y_temp, X_sim, Δt_sim, nx, ny, nz; path="animation_waam_temperature_$(ȳ).mp4", strid=slow_fac, l=2)
+Y_frac = [x[(2nvox+1):3nvox] for x in X_sim]
+animate_3Dmeasurement_history_planar(Y_frac, X_sim, Δt_sim, nx, ny, nz; path="animation_waam_fraction_$(ȳ).mp4", strid=slow_fac, quantity="Fraction Transformed", scale=(0, 1), l=2)
 
 WFS = [u[1] for u in U]
 plot(t, WFS, xlabel="Time (s)", ylabel="Wire Feed Speed (m/s)", label="ȳ=$(ȳ)")
+savefig("fig_waam_wfs_$(ȳ).png")
 
-TS = 0.0001 ./ Δt
+TS = norm(p̄[2] .- p̄[1]) ./ Δt
+plot(t, TS, xlabel="Times (s)", ylabel="Travel Speed (m/s)")
+savefig("fig_waam_ts_$(ȳ).png")
+
 r = @. wire_diam * √(WFS / (2TS))
 plot(t, r, xlabel="Times (s)", ylabel="Bead Radius (m)")
+savefig("fig_waam_bead_diam_$(ȳ).png")
+
+plot(t, Δt, xlabel="Times (s)", ylabel="Time Step (s)")
+savefig("fig_waam_timestep_$(ȳ).png")
