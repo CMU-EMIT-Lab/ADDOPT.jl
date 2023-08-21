@@ -90,16 +90,16 @@ function inplace_solve_rk4(process::Process{ID,TD,PD}, x₀::Vector{Ty}, dt::Flo
     t = t₀
     for i in 1:(Nk-1)
         x₁ .= x
-        combined_dynamics!(k₁, x₁, u, process, t, zi + i)
+        combined_dynamics!(k₁, x₁, u, process, t, zi + i, dt)
 
         @. x₂ = x + k₁ * dt / 2
-        combined_dynamics!(k₂, x₂, u, process, t, zi + i)
+        combined_dynamics!(k₂, x₂, u, process, t, zi + i, dt)
 
         @. x₃ = x + k₂ * dt / 2
-        combined_dynamics!(k₃, x₃, u, process, t, zi + i)
+        combined_dynamics!(k₃, x₃, u, process, t, zi + i, dt)
 
         @. x₄ = x + k₃ * dt
-        combined_dynamics!(k₄, x₄, u, process, t, zi + i)
+        combined_dynamics!(k₄, x₄, u, process, t, zi + i, dt)
 
         x .+= @. (k₁ + 2k₂ + 2k₃ + k₄) * (dt / 6)
         t += dt

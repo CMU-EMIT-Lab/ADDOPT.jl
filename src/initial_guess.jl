@@ -75,7 +75,7 @@ function build_U_wall(id::PlanarHeatsourcePrescribedMotionDynamics, Nk, Nc)
 end
 
 function rollout(process::Process, x₀, U, Nkb, Nkc, Nc, Δtb, Δtc; free_time=false)
-    f!(dx, x, u, t, zi) = combined_dynamics!(dx, x, u, process, t, zi)
+    f!(dx, x, u, t, zi) = combined_dynamics!(dx, x, u, process, t, zi, Δtb)
     X = []
     x0 = copy(x₀)
 
@@ -94,7 +94,7 @@ function rollout(process::Process, x₀, U, Nkb, Nkc, Nc, Δtb, Δtc; free_time=
 end
 
 function rollout(process::Process, x₀, U, Nk, Δt)
-    f!(dx, x, u, t, zi) = combined_dynamics!(dx, x, u, process, t, zi)
+    f!(dx, x, u, t, zi) = combined_dynamics!(dx, x, u, process, t, zi, Δt)
     X = solve_RK4(f!, x₀, U, Δt, Nk, 0.0, 0)
 
     return X

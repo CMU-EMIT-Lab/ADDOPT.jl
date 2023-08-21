@@ -65,8 +65,16 @@ function dynamics_function!(td::VoxelEnergyDynamics, ds::AbstractVector{Ty}, s, 
     end::Vector{Ty}
 
     zint = floor(Int, zi)
-    @. x = (1 - (zi - zint)) * xar[zint] + (zi - zint) * xar[zint+1]
-    μ(xᵢ, xⱼ) = xᵢ > 0.0 ? min(xᵢ, xⱼ) / xᵢ : 1.0
+    if zint == zi
+        x .= xar[zint]
+    else
+        @. x = (1 - (zi - zint)) * xar[zint] + (zi - zint) * xar[zint+1]
+    end
+
+    if eltype(ds) == Symbolics.Num
+        x .= 1.0
+    end
+    μ(xᵢ, xⱼ) = xᵢ > 0.0 ? min(xᵢ, xⱼ) / xᵢ : 0.0 #1.0 HACKY
 
     N = Ns(td)
     dE = view(ds, 1:N)
@@ -89,7 +97,7 @@ function dynamics_function!(td::VoxelEnergyDynamics, ds::AbstractVector{Ty}, s, 
     Cᵢ = view(rcC, :, :, 1:(nz-1))
     Cⱼ = view(rcC, :, :, 2:nz)
     dEᵢ .+= (k / (l^2 * ρ * cₚ)) .* (Eⱼ .* μ.(xⱼ, xᵢ) .- Eᵢ .* μ.(xᵢ, xⱼ))
-    Cᵢ .-= μ(xᵢ, xⱼ)
+    Cᵢ .-= μ.(xᵢ, xⱼ)
 
     # From bottom
     dEᵢ = view(rcdE, :, :, 2:nz)
@@ -100,7 +108,7 @@ function dynamics_function!(td::VoxelEnergyDynamics, ds::AbstractVector{Ty}, s, 
     Cᵢ = view(rcC, :, :, 2:nz)
     Cⱼ = view(rcC, :, :, 1:(nz-1))
     dEᵢ .+= (k / (l^2 * ρ * cₚ)) .* (Eⱼ .* μ.(xⱼ, xᵢ) .- Eᵢ .* μ.(xᵢ, xⱼ))
-    Cᵢ .-= μ(xᵢ, xⱼ)
+    Cᵢ .-= μ.(xᵢ, xⱼ)
 
     # From in
     dEᵢ = view(rcdE, :, 2:ny, :)
@@ -111,7 +119,7 @@ function dynamics_function!(td::VoxelEnergyDynamics, ds::AbstractVector{Ty}, s, 
     Cᵢ = view(rcC, :, 2:ny, :)
     Cⱼ = view(rcC, :, 1:(ny-1), :)
     dEᵢ .+= (k / (l^2 * ρ * cₚ)) .* (Eⱼ .* μ.(xⱼ, xᵢ) .- Eᵢ .* μ.(xᵢ, xⱼ))
-    Cᵢ .-= μ(xᵢ, xⱼ)
+    Cᵢ .-= μ.(xᵢ, xⱼ)
 
     # From out
     dEᵢ = view(rcdE, :, 1:(ny-1), :)
@@ -122,7 +130,7 @@ function dynamics_function!(td::VoxelEnergyDynamics, ds::AbstractVector{Ty}, s, 
     Cᵢ = view(rcC, :, 1:(ny-1), :)
     Cⱼ = view(rcC, :, 2:ny, :)
     dEᵢ .+= (k / (l^2 * ρ * cₚ)) .* (Eⱼ .* μ.(xⱼ, xᵢ) .- Eᵢ .* μ.(xᵢ, xⱼ))
-    Cᵢ .-= μ(xᵢ, xⱼ)
+    Cᵢ .-= μ.(xᵢ, xⱼ)
 
     # From left
     dEᵢ = view(rcdE, 2:nx, :, :)
@@ -133,7 +141,7 @@ function dynamics_function!(td::VoxelEnergyDynamics, ds::AbstractVector{Ty}, s, 
     Cᵢ = view(rcC, 2:nx, :, :)
     Cⱼ = view(rcC, 1:(nx-1), :, :)
     dEᵢ .+= (k / (l^2 * ρ * cₚ)) .* (Eⱼ .* μ.(xⱼ, xᵢ) .- Eᵢ .* μ.(xᵢ, xⱼ))
-    Cᵢ .-= μ(xᵢ, xⱼ)
+    Cᵢ .-= μ.(xᵢ, xⱼ)
 
     # From right
     dEᵢ = view(rcdE, 1:(nx-1), :, :)
@@ -144,7 +152,7 @@ function dynamics_function!(td::VoxelEnergyDynamics, ds::AbstractVector{Ty}, s, 
     Cᵢ = view(rcC, 1:(nx-1), :, :)
     Cⱼ = view(rcC, 2:nx, :, :)
     dEᵢ .+= (k / (l^2 * ρ * cₚ)) .* (Eⱼ .* μ.(xⱼ, xᵢ) .- Eᵢ .* μ.(xᵢ, xⱼ))
-    Cᵢ .-= μ(xᵢ, xⱼ)
+    Cᵢ .-= μ.(xᵢ, xⱼ)
 
     dE .+= h∞ .* C .* (T∞ .* x .* l^2 .- E ./ (ρ * l * cₚ)) # Convection to environment
 
@@ -159,7 +167,7 @@ end
 function temperature!(td::VoxelEnergyDynamics, T, s)
     N = Ns(td)
     E = view(s, 1:N)
-    x = td.x
+    x = td.x[end]
 
-    map!((E, x) -> x > 0.0 ? E / (td.l^3 * td.ρ * td.cₚ) / x : 0.0, T, E, x)
+    map!((E, x) -> x > 1e-4 ? E / (td.l^3 * td.ρ * td.cₚ) / x : 295.0, T, E, x)
 end

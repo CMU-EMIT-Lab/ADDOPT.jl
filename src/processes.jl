@@ -6,6 +6,7 @@ include("input_models/planar_gmaw_prescribed.jl")
 include("input_models/planar_heatsource_relaxed.jl")
 include("input_models/planar_heatsource_prescribed.jl")
 include("input_models/gmaw_prescribed.jl")
+include("input_models/gmaw_fully_prescribed.jl")
 include("input_models/null_input.jl")
 
 # Property models
@@ -73,24 +74,24 @@ function gen_xyz(nx, ny, nz, l)
     return x, y, z
 end
 
-function WAAMPrescribedMotion(nx, ny, nz, l, k, ρ, cₚ, T∞, T₀, wire_diam, h∞, h₀, hₐᵣ, η, Tmin, Tmax, p̄)#, t̄)
+function WAAMPrescribedMotion(nx, ny, nz, l, k, ρ, cₚ, T∞, T₀, wire_diam, h∞, h₀, hₐᵣ, η, Tmin, Tmax, p̄, r_bead, Δr, xfill, xtorch)
     xₙ, yₙ, zₙ = gen_xyz(nx, ny, nz, l)
     Tₗ = 1700.0 # K
 
-    id = GMAWDynamicsPrescribed(nx, ny, nz, l, xₙ, yₙ, zₙ, ρ, cₚ, T∞, Tₗ, wire_diam, h∞, h₀, hₐᵣ, η, wire_diam, wire_diam, p̄)#, t̄)
-    td = VoxelEnergyFillDynamics(nx, ny, nz, l, xₙ, yₙ, zₙ, k, ρ, cₚ, T∞, T₀, wire_diam, h∞, h₀, Tmin, Tmax)
+    id = GMAWDynamicsFullyPrescribed(nx, ny, nz, l, xₙ, yₙ, zₙ, ρ, cₚ, T∞, Tₗ, wire_diam, h∞, h₀, hₐᵣ, η, r_bead, Δr, p̄, xtorch)
+    td = VoxelEnergyDynamics(nx, ny, nz, l, xₙ, yₙ, zₙ, k, ρ, cₚ, T∞, T₀, wire_diam, h∞, h₀, Tmin, Tmax, xfill)
     pd = NullPropertyDynamics()
 
     return Process(id, td, pd)
 end
 
-function WAAMHardnessPrescribedMotion(nx, ny, nz, l, k, ρ, cₚ, T∞, T₀, wire_diam, h∞, h₀, hₐᵣ, η, Tmin, Tmax, p̄, A, τ)
+function WAAMHardnessPrescribedMotion(nx, ny, nz, l, k, ρ, cₚ, T∞, T₀, wire_diam, h∞, h₀, hₐᵣ, η, Tmin, Tmax, p̄, A, τ, r_bead, Δr, xfill, xtorch)
     xₙ, yₙ, zₙ = gen_xyz(nx, ny, nz, l)
     n_voxels = nx * ny * nz
     Tₗ = 1700.0 # K
 
-    id = GMAWDynamicsPrescribed(nx, ny, nz, l, xₙ, yₙ, zₙ, ρ, cₚ, T∞, Tₗ, wire_diam, h∞, h₀, hₐᵣ, η, wire_diam, wire_diam, p̄)
-    td = VoxelEnergyFillDynamics(nx, ny, nz, l, xₙ, yₙ, zₙ, k, ρ, cₚ, T∞, T₀, wire_diam, h∞, h₀, Tmin, Tmax)
+    id = GMAWDynamicsFullyPrescribed(nx, ny, nz, l, xₙ, yₙ, zₙ, ρ, cₚ, T∞, Tₗ, wire_diam, h∞, h₀, hₐᵣ, η, r_bead, Δr, p̄, xtorch)
+    td = VoxelEnergyDynamics(nx, ny, nz, l, xₙ, yₙ, zₙ, k, ρ, cₚ, T∞, T₀, wire_diam, h∞, h₀, Tmin, Tmax, xfill)
     pd = HardnessDynamics(A, τ, n=n_voxels)
 
     return Process(id, td, pd)

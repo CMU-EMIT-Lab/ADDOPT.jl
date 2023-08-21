@@ -2,7 +2,7 @@ using StatsFuns
 using Interpolations
 using Symbolics
 
-struct GMAWDynamicsPrescribed <: InputDynamics
+struct GMAWDynamicsFullyPrescribed <: InputDynamics
     nx::Int
     ny::Int
     nz::Int
@@ -25,7 +25,7 @@ struct GMAWDynamicsPrescribed <: InputDynamics
 
     η::Float64
     rₚ::Float64
-    rₘ::Float64
+    Δr::Vector{Float64}
 
     p̄::Vector{Vector{Float64}}
 
@@ -35,75 +35,58 @@ struct GMAWDynamicsPrescribed <: InputDynamics
     Fp_cache::Dict{Tuple{DataType,Int},Any}
     Fm_cache::Dict{Tuple{DataType,Int},Any}
 
-    function GMAWDynamicsPrescribed(nx, ny, nz, l, xₙ, yₙ, zₙ, ρ, cₚ, T∞, Tₗ, wire_diam, h∞, h₀, hₐᵣ, η, rₚ, rₘ, p̄, x)#, t̄)
+    function GMAWDynamicsFullyPrescribed(nx, ny, nz, l, xₙ, yₙ, zₙ, ρ, cₚ, T∞, Tₗ, wire_diam, h∞, h₀, hₐᵣ, η, rₚ, Δr, p̄, x)
         Fp = Dict{Tuple{DataType,Int},Any}()
         Fm = Dict{Tuple{DataType,Int},Any}()
 
         xc = zeros(size(x[1]))
 
-        return new(nx, ny, nz, l, xₙ, yₙ, zₙ, ρ, cₚ, T∞, Tₗ, wire_diam, h∞, h₀, hₐᵣ, η, rₚ, rₘ, p̄, x, xc, Fp, Fm)
+        return new(nx, ny, nz, l, xₙ, yₙ, zₙ, ρ, cₚ, T∞, Tₗ, wire_diam, h∞, h₀, hₐᵣ, η, rₚ, Δr, p̄, x, xc, Fp, Fm)
     end
 end
 
-Nu(id::GMAWDynamicsPrescribed)::Int = 1 # WFS (m/s for speeds)
-Nr(id::GMAWDynamicsPrescribed)::Int = 0
+Nu(id::GMAWDynamicsFullyPrescribed)::Int = 1 # trim
+Nr(id::GMAWDynamicsFullyPrescribed)::Int = 0
 
-input_min(id::GMAWDynamicsPrescribed) = [0.025] # WFS (m/s for speeds)
-input_max(id::GMAWDynamicsPrescribed) = [0.100]
-input_idle(id::GMAWDynamicsPrescribed) = [0.0]
+input_min(id::GMAWDynamicsFullyPrescribed) = [0.9] # trim
+input_max(id::GMAWDynamicsFullyPrescribed) = [1.1]
+input_idle(id::GMAWDynamicsFullyPrescribed) = [0.0]
 
-state_min(id::GMAWDynamicsPrescribed) = []
-state_max(id::GMAWDynamicsPrescribed) = []
+state_min(id::GMAWDynamicsFullyPrescribed) = []
+state_max(id::GMAWDynamicsFullyPrescribed) = []
 
-function dynamics_function!(id::GMAWDynamicsPrescribed, dr::AbstractVector{Ty}, s, r, u, t, zi) where {Ty}
+function dynamics_function!(id::GMAWDynamicsFullyPrescribed, dr::AbstractVector{Ty}, s, r, u, t, zi) where {Ty}
 
 end
 
-function input_function!(id::GMAWDynamicsPrescribed, ds::AbstractVector{Ty}, r, u, t, zi, Δt) where {Ty}
-    N = length(ds) ÷ 2
-    dE = view(ds, 1:N)
-    dx = view(ds, (N+1):2N)
+function input_function!(id::GMAWDynamicsFullyPrescribed, ds::AbstractVector{Ty}, r, u, t, zi, Δt) where {Ty}
     nz, ny, nx = id.nz, id.ny, id.nx
-    WFS = u[1]
+    N = nx * ny * nz
+    dE = view(ds, 1:N)
+    trim = u[1]
     l, xₙ, yₙ, zₙ = id.l, id.xₙ, id.yₙ, id.zₙ
     ρ, cₚ, T∞, wire_diam = id.ρ, id.cₚ, id.T∞, id.wire_diam
-    h∞, h₀, hₐᵣ, η, rₚ, rₘ = id.h∞, id.h₀, id.hₐᵣ, id.η, id.rₚ, id.rₘ
+    h∞, h₀, hₐᵣ, η, rₚ = id.h∞, id.h₀, id.hₐᵣ, id.η, id.rₚ
+    xar = id.x
+    x = id.xcur
+    
+    zint = floor(Int, zi)
+    Δr = id.Δr[zint]
+    WFS = 2Δr / Δt * (rₚ / wire_diam)^2
 
-    xₜ = id.p̄[zi][1]
-    yₜ = id.p̄[zi][2]
-    zₜ = id.p̄[zi][3]
-
-    thread::Int = Threads.threadid()
-    Fp = get!(id.Fp_cache, (Ty, thread)) do
-        zeros(Ty, nx * ny * nz)
-    end::Vector{Ty}
-
-    Fm = get!(id.Fm_cache, (Ty, thread)) do
-        zeros(Ty, nx * ny * nz)
-    end::Vector{Ty}
-
-    ṁ = WFS * π * (wire_diam / 2)^2 * ρ # kg/s
-    P = 29000 * WFS # W/(m/s) * (m/s)
-
-    Fp .= (l^3 / ((2π)^(3 / 2) * rₚ^3)) .* exp.(((xₙ .- xₜ) .* (xₙ .- xₜ) .+ (yₙ .- yₜ) .* (yₙ .- yₜ) .+ (zₙ .- zₜ) .* (zₙ .- zₜ)) ./ (-2rₚ^2))
-    Fm .= (l^3 / ((2π)^(3 / 2) * rₘ^3)) .* exp.(((xₙ .- xₜ) .* (xₙ .- xₜ) .+ (yₙ .- yₜ) .* (yₙ .- yₜ) .+ (zₙ .- zₜ) .* (zₙ .- zₜ)) ./ (-2rₘ^2))
-
-    # Forced / input dynamics
-    dE .+= Fp .* (η * P)              # Add in torch power
-    dE .+= Fm .* (cₚ * ṁ * T∞)      # Add in energy contribution from incoming wire (assume room temp)
-    dx .+= Fm .* (ṁ / (l^3 * ρ))
-end
-
-function interp(t, ts, ps)
-    idx = searchsortedfirst(ts, t)
-
-    if idx == 1
-        return ps[1]
-    elseif idx == length(ts) + 1
-        return ps[end]
+    if zint == zi
+        x .= xar[zint]
+    else
+        @. x = (1 - (zi - zint)) * xar[zint] + (zi - zint) * xar[zint+1]
+        Δr = (1 - (zi - zint)) * id.Δr[zint] + (zi - zint) * id.Δr[zint+1]
     end
 
-    frac = 1 - (ts[idx] - t) / (ts[idx] - ts[idx-1])
+    if eltype(ds) == Symbolics.Num
+        x .= 1.0
+    end
 
-    return @. ps[idx-1] + frac * (ps[idx] - ps[idx-1])
+    P = (η * 29000 + cₚ * ρ * (wire_diam/2.0)^2 * π * T∞) * WFS
+
+    # Forced / input dynamics
+    dE .+= x .* (trim * P)              # Add in torch power
 end
