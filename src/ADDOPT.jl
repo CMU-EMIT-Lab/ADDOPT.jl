@@ -14,7 +14,7 @@ abstract type InputDynamics <: Dynamics end
 abstract type TransferDynamics <: Dynamics end
 abstract type PropertyDynamics <: Dynamics end
 
-kc2zi(k, c, idx) = k + (c - 1) * idx.Nc
+kc2zi(k, c, idx) = k + (c - 1) * (idx.Nkb + idx.Nkc)
 
 Nu(id::InputDynamics) = 0
 Nr(id::InputDynamics) = 0
