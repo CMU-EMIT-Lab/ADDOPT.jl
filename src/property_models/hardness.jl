@@ -20,7 +20,7 @@ end
 property_min(pd::HardnessDynamics) = -Inf * ones(pd.n) # zeros(pd.n)
 property_max(pd::HardnessDynamics) = Inf * ones(pd.n)
 
-function dynamics_function!(pd::HardnessDynamics, td::TransferDynamics, dα::AbstractVector{Ty}, α, s, t) where {Ty}
+function dynamics_function!(pd::HardnessDynamics, td::TransferDynamics, dα::AbstractVector{Ty}, α, s, t, zi) where {Ty}
     thread = Threads.threadid()
     lock(pd.dictlock)
     T = get!(pd.T_cache, (Ty, thread)) do
@@ -28,14 +28,18 @@ function dynamics_function!(pd::HardnessDynamics, td::TransferDynamics, dα::Abs
     end::Vector{Ty}
     unlock(pd.dictlock)
 
-    temperature!(td, T, s)
+    temperature!(td, T, s, zi)
     # @. dα = (1 - α) * pd.A * exp(-pd.τ / T)
     # dα[T .> 1000.0] .= 0.0
     # @. dα = (logistic((1000.0 - T)/10.0) - α) * pd.A * exp(-pd.τ / T) 
     ## @. dα = (1 - α) * pd.A * exp(-pd.τ / T) * logistic((1000.0 - T)/10.0)
     # @. dα = (1 - α) * rate(T)
 
-    map!((T, α) -> (logistic((1000.0 - T) / 10.0) - α) * pd.A * exp(-pd.τ / T), dα, T, α)
+    if eltype(dα) == Symbolics.Num
+        dα .= s .+ α    
+    else
+        map!((T, α) -> (logistic((1000.0 - T) / 10.0) - α) * pd.A * exp(-pd.τ / T), dα, T, α)
+    end
 end
 
 function rate(T)

@@ -164,10 +164,17 @@ function dynamics_function!(td::VoxelEnergyDynamics, ds::AbstractVector{Ty}, s, 
     # end # Convection from argon
 end
 
-function temperature!(td::VoxelEnergyDynamics, T, s)
+function temperature!(td::VoxelEnergyDynamics, T, s, zi)
     N = Ns(td)
     E = view(s, 1:N)
-    x = td.x[end]
+    x = td.xcur
+    xar = td.x
+    zint = floor(Int, zi)
+    if zint == zi
+        x .= xar[zint]
+    else
+        @. x = (1 - (zi - zint)) * xar[zint] + (zi - zint) * xar[zint+1]
+    end
 
-    map!((E, x) -> x > 1e-4 ? E / (td.l^3 * td.ρ * td.cₚ) / x : 295.0, T, E, x)
+    map!((E, x) -> x > 1e-4 ? E / (td.l^3 * td.ρ * td.cₚ) / x : td.T∞, T, E, x)
 end

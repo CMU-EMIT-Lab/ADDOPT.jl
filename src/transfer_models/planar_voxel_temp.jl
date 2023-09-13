@@ -87,6 +87,6 @@ function dynamics_function!(td::PlanarVoxelTemperatureDynamics, ds::AbstractVect
     dT .+= (h∞ / (ρ * l * cₚ)) .* (T∞ .- T) # Convection to environment
 end
 
-function temperature!(td::PlanarVoxelTemperatureDynamics, T, s)
+function temperature!(td::PlanarVoxelTemperatureDynamics, T, s, zi)
     T .= s
 end

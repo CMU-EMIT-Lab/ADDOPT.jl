@@ -16,6 +16,6 @@ function dynamics_function!(td::NewtonLumpedDynamics, ds::AbstractVector{Ty}, s,
     ds[1] = td.h * (td.T∞ - T) / (td.m * td.cₚ)
 end
 
-function temperature!(td::NewtonLumpedDynamics, T, s)
+function temperature!(td::NewtonLumpedDynamics, T, s, zi)
     T .= s
 end

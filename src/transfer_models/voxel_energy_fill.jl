@@ -190,7 +190,7 @@ function dynamics_function!(td::VoxelEnergyFillDynamics, ds::AbstractVector{Ty},
     # end # Convection from argon
 end
 
-function temperature!(td::VoxelEnergyFillDynamics, T, s)
+function temperature!(td::VoxelEnergyFillDynamics, T, s, zi)
     N = Ns(td) ÷ 2
     E = view(s, 1:N)
     x = view(s, (N+1):2N)

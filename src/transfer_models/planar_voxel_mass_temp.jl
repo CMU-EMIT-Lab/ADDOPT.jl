@@ -159,7 +159,7 @@ function dynamics_function!(td::PlanarVoxelMassEnergyDynamics, ds::AbstractVecto
     # end # Convection from argon
 end
 
-function temperature!(td::PlanarVoxelMassEnergyDynamics, T, s)
+function temperature!(td::PlanarVoxelMassEnergyDynamics, T, s, zi)
     N = Ns(td) ÷ 2
     E = view(s, 1:N)
     x = view(s, (N+1):2N)

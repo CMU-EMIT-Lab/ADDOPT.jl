@@ -6,6 +6,6 @@ end
 property_min(pd::NullPropertyDynamics) = []
 property_max(pd::NullPropertyDynamics) = []
 
-function dynamics_function!(pd::NullPropertyDynamics, td::TransferDynamics, dα::AbstractVector{Ty}, α, s, t) where Ty
+function dynamics_function!(pd::NullPropertyDynamics, td::TransferDynamics, dα::AbstractVector{Ty}, α, s, t, zi) where Ty
 
 end
