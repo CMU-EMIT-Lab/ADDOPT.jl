@@ -86,29 +86,29 @@ R = Diagonal([5e-2])
 ū = [1.0]
 Δt̄b = 0.076
 objective = TimeWeightedQuadraticObjective(Q, R, xg, ū, Δt̄b)
-# problem = AdditiveProblem(process, objective, Nkb, Nkc, Nc, x₀, x̄=[400.0 * ρ * cₚ * l^3 * ones(nvox); Inf * ones(nvox)], Δtb=nothing, Δtc=nothing, final_constraint=true, hessian=false, xfmin=zeros(2nvox),
-    # Δtb_min=0.04, Δtb_max=0.12,
-    # Δtc_min=0.005, Δtc_max=0.10)
+problem = AdditiveProblem(process, objective, Nkb, Nkc, Nc, x₀, x̄=[400.0 * ρ * cₚ * l^3 * ones(nvox); Inf * ones(nvox)], Δtb=nothing, Δtc=nothing, final_constraint=false, hessian=false, xfmin=zeros(2nvox),
+    Δtb_min=0.04, Δtb_max=0.12,
+    Δtc_min=0.005, Δtc_max=0.10)
 
 X0 = [[[(l^3 * ρ * cₚ) * (T∞ + (Tₗ - T∞) * (i < Nkb ? i / Nkb : (Nkc - (i - Nkb)) / Nkc)) * x; zeros(nvox)] for (i, x) in enumerate(x̄[((c-1)*(Nkb+Nkc)+1):(c*(Nkb+Nkc))])] for c in 1:Nc]
 U0 = [[[1.0] for k in 1:Nkb] for c in 1:Nc]
-# z0 = marshall_z(problem.idx, X0, U0, 0.075, 0.08; free_time=true)
+z0 = marshall_z(problem.idx, X0, U0, 0.075, 0.08; free_time=true)
 
-# if isfile("traj_waam_z_$(ȳ).jld2")
-#     global z0 = load_object("traj_waam_z_$(ȳ).jld2")
-# end
+if isfile("traj_waam_z_$(ȳ).jld2")
+    global z0 = load_object("traj_waam_z_$(ȳ).jld2")
+end
 
-# z, X, U, Δt = optimize_trajectory(problem; max_iter=3000, tol=1e-5, c_tol=1.0e-5, z₀=z0, solv="ma97")
-# t = cumsum(Δt)
-# save_object("traj_waam_z_$(ȳ).jld2", z)
-# save_object("traj_waam_X_$(ȳ).jld2", X)
-# save_object("traj_waam_U_$(ȳ).jld2", U)
-# save_object("traj_waam_t_$(ȳ).jld2", t)
+z, X, U, Δt = optimize_trajectory(problem; max_iter=3000, tol=1e-5, c_tol=1.0e-5, z₀=z0, solv="ma97")
+t = cumsum(Δt)
+save_object("traj_waam_z_$(ȳ).jld2", z)
+save_object("traj_waam_X_$(ȳ).jld2", X)
+save_object("traj_waam_U_$(ȳ).jld2", U)
+save_object("traj_waam_t_$(ȳ).jld2", t)
 
-z = load_object("traj_waam_z_$(ȳ).jld2")
-X = load_object("traj_waam_X_$(ȳ).jld2")
-U = load_object("traj_waam_U_$(ȳ).jld2")
-t = load_object("traj_waam_t_$(ȳ).jld2")
+# z = load_object("traj_waam_z_$(ȳ).jld2")
+# X = load_object("traj_waam_X_$(ȳ).jld2")
+# U = load_object("traj_waam_U_$(ȳ).jld2")
+# t = load_object("traj_waam_t_$(ȳ).jld2")
 Δt = t .- vcat([0.0], t[1:(end-1)])
 
 t .-= t[1]
@@ -169,11 +169,11 @@ trim = [u[1] for u in U]
 
 WFS[trim .== 0] .= 0
 
-boiler_plate = read("preamble.mod", String)
+# boiler_plate = read("preamble.mod", String)
 
-lines = traj_to_lines(process.input_dynamics, t, TS, WFS, trim)
-rapid = lines_to_rapid(lines)
+# lines = traj_to_lines(process.input_dynamics, t, TS, WFS, trim)
+# rapid = lines_to_rapid(lines)
 
-open("experimental_build_$(ȳ).mod", "w") do f
-    write(f, replace(boiler_plate, "CodeGoesHere" => rapid))
-end
+# open("experimental_build_$(ȳ).mod", "w") do f
+#     write(f, replace(boiler_plate, "CodeGoesHere" => rapid))
+# end

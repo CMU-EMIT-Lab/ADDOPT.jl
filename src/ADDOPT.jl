@@ -862,8 +862,14 @@ function optimize_trajectory(problem::AdditiveProblem;
         for k in (Nkb+1):(Nkb+Nkc)
             if isnothing(problem.Δtc)
                 Δtc = z[idx.Δtc[c][k]]
-                MOI.add_constraint(solver, Δtc, MOI.LessThan(problem.Δtc_max))
-                MOI.add_constraint(solver, Δtc, MOI.GreaterThan(problem.Δtc_min))
+
+                if c == Nc # Fix size of final cooling to max
+                    MOI.add_constraint(solver, Δtc, MOI.LessThan(problem.Δtc_max))
+                    MOI.add_constraint(solver, Δtc, MOI.GreaterThan(problem.Δtc_max))
+                else
+                    MOI.add_constraint(solver, Δtc, MOI.LessThan(problem.Δtc_max))
+                    MOI.add_constraint(solver, Δtc, MOI.GreaterThan(problem.Δtc_min))
+                end
             end
 
             xj = z[idx.x[c][k]]
