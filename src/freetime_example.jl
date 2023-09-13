@@ -24,7 +24,7 @@ Nk = 250
 Nc = 3
 problem = AdditiveProblem(process, objective, Nk, 3Nk, Nc, x₀, x̄=x̄, Δtb=nothing, Δtc=0.04, final_constraint=false)
 
-z, X, U, Δt, λ = optimize_trajectory(problem; max_iter=2000, c_tol=1.0e-6)
+z, X, U, Δt, λ = optimize_trajectory(problem; max_iter=2000, c_tol=1.0e-6, xg=[300.0])
 Nt = length(X)
 T = [X[i][1] for i in 1:Nt]
 # y = [X[i][2] for i in 1:Nt]
@@ -38,5 +38,5 @@ end
 
 plot(t, T, label="Temperature (K)", xlabel="Time (s)", color="orange")
 plot!(t, P ./ 10, label="Power (W)", color="purple")
-savefig("freetime3.png")
+# savefig("freetime3.png")
 # plot!(twinx(), t, y, ylabel="Phase Fraction", label=nothing)

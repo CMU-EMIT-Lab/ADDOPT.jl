@@ -74,6 +74,7 @@ struct AdditiveProblem{OB<:Objective,ID<:InputDynamics,TD<:TransferDynamics,PD<:
     x₀::Vector{Float64}
     ximin::Vector{Float64}
     x̄::Vector{Float64}
+    xfmin::Vector{Float64}
 
     final_constraint::Bool
     hessian::Bool
@@ -86,7 +87,7 @@ struct AdditiveProblem{OB<:Objective,ID<:InputDynamics,TD<:TransferDynamics,PD<:
     Δtc_max::Float64
 
     function AdditiveProblem(process::Process{ID,TD,PD}, objective::OB,
-        Nkb, Nkc, Nc, x₀; x̄=nothing, Δtb=nothing, Δtc=nothing, final_constraint=false, hessian=true, ximin=nothing,
+        Nkb, Nkc, Nc, x₀; x̄=nothing, Δtb=nothing, Δtc=nothing, final_constraint=false, hessian=true, ximin=nothing, xfmin=nothing,
         Δtb_min=0.01,
         Δtb_max=0.04,
         Δtc_min=0.01,
@@ -114,11 +115,19 @@ struct AdditiveProblem{OB<:Objective,ID<:InputDynamics,TD<:TransferDynamics,PD<:
         if isnothing(ximin)
             ximin = x₀
         end
+        if !final_constraint
+            xfmin = -Inf * ones(idx.Nstates)
+            x̄ = Inf * ones(idx.Nstates)
+        else
+            if isnothing(xfmin)
+                xfmin = x̄
+            end
+        end
 
         new{OB,ID,TD,PD}(process, objective, Δtb, Δtc, Nkb, Nkc, Nc,
             con_jacobian_sparsity,
             idx, sparsity_cache,
-            x₀, ximin, x̄,
+            x₀, ximin, x̄, xfmin,
             final_constraint, hessian,
             cp,
             Δtb_min, Δtb_max,
@@ -154,7 +163,7 @@ function generate_z_indices(Nkb, Nkc, Nc, Nu, Nr, Ns, Nα, Neq, Nineq, Δtb, Δt
 
     Nconb = Nstates + Neq + Nineq
     Nconc = Nstates
-    Nconstr = Nconb * (Nkb * Nc) + Nconc * (Nkc * Nc - 1) + (final_constraint ? 2Nstates : Nstates)
+    Nconstr = Nconb * (Nkb * Nc) + Nconc * (Nkc * Nc - 1)
 
     return (Nz=Nz, Nstates=Nstates, u=u, x=x, Δtb=Δtb, Δtc=Δtc, Nconstr=Nconstr, Nkb=Nkb, Nkc=Nkc, Nc=Nc, Nu=Nu, Neq=Neq, Nineq=Nineq, Nconb=Nconb, Nconc=Nconc)
 end
@@ -172,7 +181,7 @@ function combined_dynamics!(f, x, u, process::Process{ID,TD,PD}, t, zi, Δt) whe
 
     dynamics_function!(td, ds, s, t, zi)
     input_function!(id, ds, r, u, t, zi, Δt) # always call second, additive
-    dynamics_function!(pd, td, dα, α, s, t)
+    dynamics_function!(pd, td, dα, α, s, t, zi)
     dynamics_function!(id, dr, s, r, u, t, zi)
 end
 
@@ -273,10 +282,7 @@ function constraints!(process::Process, c, z, idx, xᵢ, cp::CachePackage; xf=no
     free_cool_time = isnothing(Δtc)
     Nconb, Nconc = idx.Nconb, idx.Nconc
 
-    # Initial state constraint
-    @. c[1:Nx] = z[idx.x[1][1]] - xᵢ
-
-    ic(c, k) = Nx + (c - 1) * (Nkb * Nconb + Nkc * Nconc) + (k > Nkb ? Nkb * Nconb + (k - Nkb - 1) * Nconc : (k - 1) * Nconb)
+    ic(c, k) = (c - 1) * (Nkb * Nconb + Nkc * Nconc) + (k > Nkb ? Nkb * Nconb + (k - Nkb - 1) * Nconc : (k - 1) * Nconb)
     t = 0.0
     for cyc in 1:Nc
         if cyc > 1
@@ -344,13 +350,6 @@ function constraints!(process::Process, c, z, idx, xᵢ, cp::CachePackage; xf=no
         end
 
     end
-
-    # Final state constraint
-    if final_constraint
-        @. c[(end-Nx+1):(end)] = z[idx.x[Nc][Nkb+Nkc]] - xf
-    end
-
-
 end
 
 function constraint_jacobian!(process::Process, jac, z, idx, sparsity_cache, cp::CachePackage; Δtb=nothing, Δtc=nothing, final_constraint=false, prob=nothing)
@@ -393,13 +392,10 @@ function constraint_jacobian!(process::Process, jac, z, idx, sparsity_cache, cp:
     lJc∂xₖ₊₁ = nnz(Jc∂xₖ₊₁)
     lJc∂Δt = free_cool_time ? nnz(Jc∂Δt) : 0
 
-    # Initial state constraint jacobian
-    jac[1:Nx] .= 1
-
     Nconbjac = lJb∂xₖ + lJb∂uₖ + lJb∂xₖ₊₁ + lJb∂uₖ₊₁ + lJb∂Δt
     Nconcjac = lJc∂xₖ + lJc∂xₖ₊₁ + lJc∂Δt
 
-    ic(c, k) = 1 + Nx + (c - 1) * (Nkb * Nconbjac + Nkc * Nconcjac) + (k > Nkb ? Nkb * Nconbjac + (k - Nkb - 1) * Nconcjac : (k - 1) * Nconbjac)
+    ic(c, k) = 1 + (c - 1) * (Nkb * Nconbjac + Nkc * Nconcjac) + (k > Nkb ? Nkb * Nconbjac + (k - Nkb - 1) * Nconcjac : (k - 1) * Nconbjac)
     t = 0.0
 
     for cyc in 1:Nc
@@ -526,11 +522,6 @@ function constraint_jacobian!(process::Process, jac, z, idx, sparsity_cache, cp:
         end
     end
 
-    # Final state constraint jacobian
-    if final_constraint
-        jac[(end-Nx+1):(end)] .= 1
-    end
-
     # res = zeros(idx.Nconstr, idx.Nz)
     # rp = zeros(idx.Nconstr)
     # ForwardDiff.jacobian!(res, (r, z) -> constraints!(process, r, z, idx, prob.x₀, cp; xf=prob.x̄, Δtb=Δtb, Δtc=Δtc), rp, z)
@@ -620,10 +611,7 @@ function constraint_jacobian_sparsity(idx, process::Process, cp::CachePackage; �
     NΔtc = free_cool_time ? 1 : 0
 
     total_structure = Vector{Tuple{Int,Int}}()
-
-    # Initial state constraint
-    append!(total_structure, collect(zip(collect(1:Nx), collect(idx.x[1][1]))))
-    row_offset = Nx
+    row_offset = 0
 
     println("Entering loop")
     for cyc in 1:Nc
@@ -697,11 +685,6 @@ function constraint_jacobian_sparsity(idx, process::Process, cp::CachePackage; �
 
     end
     println("Finished loop")
-
-    # Final state constraint
-    if final_constraint
-        append!(total_structure, collect(zip(collect((Nconstr-Nx+1):(Nconstr)), collect(idx.x[Nc][Nkb+Nkc]))))
-    end
 
     # @show total_structure
     # display(sparse(rows, cols, trues(length(cols))))
@@ -783,7 +766,7 @@ function optimize_trajectory(problem::AdditiveProblem;
                 if isnothing(problem.Δtc)
                     z₀[idx.Δtc[c][k]] = (problem.Δtc_min + problem.Δtc_max) / 2
                 end
-                z₀[idx.x[c][k]] .= problem.x̄
+                z₀[idx.x[c][k]] .= isnothing(xg) ? problem.x̄ : xg
             end
         end
     end
@@ -830,7 +813,6 @@ function optimize_trajectory(problem::AdditiveProblem;
     @time MOI.eval_constraint_jacobian(problem, jt, z₀)
     @time MOI.eval_constraint_jacobian(problem, jt, z₀)
 
-    ncf = problem.final_constraint ? Nx : 0
     c_lb = repeat([zeros(Nx + Neq); ineq_min(id)], Nkb)
     c_ub = repeat([zeros(Nx + Neq); ineq_max(id)], Nkb)
     c_lc = repeat(zeros(Nx), Nkc - 1)
@@ -839,8 +821,8 @@ function optimize_trajectory(problem::AdditiveProblem;
     c_l_cyc = vcat(c_lb, c_lc)
     c_u_cyc = vcat(c_ub, c_uc)
 
-    c_l = vcat(problem.ximin .- problem.x₀, c_l_cyc, repeat(vcat(zeros(Nx), c_l_cyc), Nc - 1), zeros(ncf))
-    c_u = vcat(zeros(Nx), c_u_cyc, repeat(vcat(zeros(Nx), c_u_cyc), Nc - 1), zeros(ncf))
+    c_l = vcat(c_l_cyc, repeat(vcat(zeros(Nx), c_l_cyc), Nc - 1))
+    c_u = vcat(c_u_cyc, repeat(vcat(zeros(Nx), c_u_cyc), Nc - 1))
 
     nlp_bounds = MOI.NLPBoundsPair.(c_l, c_u)
     block_data = MOI.NLPBlockData(nlp_bounds, problem, true)
@@ -867,8 +849,14 @@ function optimize_trajectory(problem::AdditiveProblem;
             MOI.add_constraints(solver, uj, MOI.GreaterThan.(input_min(id)))
 
             xj = z[idx.x[c][k]]
-            MOI.add_constraints(solver, xj, MOI.LessThan.(x_max))
-            MOI.add_constraints(solver, xj, MOI.GreaterThan.(x_min))
+            if c > 1 || k > 1
+                MOI.add_constraints(solver, xj, MOI.LessThan.(x_max))
+                MOI.add_constraints(solver, xj, MOI.GreaterThan.(x_min))
+            else
+                # Initial state constraint
+                MOI.add_constraints(solver, xj, MOI.LessThan.(problem.x₀))
+                MOI.add_constraints(solver, xj, MOI.GreaterThan.(problem.ximin))
+            end
         end
 
         for k in (Nkb+1):(Nkb+Nkc)
@@ -879,15 +867,20 @@ function optimize_trajectory(problem::AdditiveProblem;
             end
 
             xj = z[idx.x[c][k]]
-            MOI.add_constraints(solver, xj, MOI.LessThan.(x_max))
-            MOI.add_constraints(solver, xj, MOI.GreaterThan.(x_min))
+            if c < Nc || k < Nkb + Nkc
+                MOI.add_constraints(solver, xj, MOI.LessThan.(x_max))
+                MOI.add_constraints(solver, xj, MOI.GreaterThan.(x_min))
+            else
+                # Final state constraint
+                MOI.add_constraints(solver, xj, MOI.LessThan.(problem.x̄))
+                MOI.add_constraints(solver, xj, MOI.GreaterThan.(problem.xfmin))
+            end
         end
 
     end
 
     for i in 1:lastindex(z₀)
         MOI.set(solver, MOI.VariablePrimalStart(), z[i], z₀[i])
-        # println("setting initial val of z$(i) to $(z₀[i])")
     end
 
     if !isnothing(λ₀)

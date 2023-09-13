@@ -22,10 +22,10 @@ objective = QuadraticObjective(Q, R, Qf, x̄, ū)
 # Nx, Ny, l should be moved to the transfer process
 Nk = 250
 Nc = 3
-problem = AdditiveProblem(process, objective, Nk, 3Nk, Nc, x₀, x̄=x̄, Δtb=0.04, Δtc=0.04, final_constraint=false)
+problem = AdditiveProblem(process, objective, Nk, 3Nk, Nc, x₀, x̄=[700.0; 1.0], Δtb=0.04, Δtc=0.04, final_constraint=true, xfmin=[0.0; 0.0])
 
 # z0 = copy(z) + [repeat([10; 1],4Nk * Nc) .* randn(problem.idx.Nstates * 4Nk * Nc); 200 .* randn(Nk * Nc)]
-z, X, U, Δt, λ = optimize_trajectory(problem; max_iter=1000, c_tol=1.0e-6)#, z₀=z0)#, λ₀=λ)
+z, X, U, Δt, λ = optimize_trajectory(problem; max_iter=1000, c_tol=1.0e-6, xg=[600.0; 0.4])#, z₀=z0)#, λ₀=λ)
 Nt = length(X)
 T = [X[i][1] for i in 1:Nt]
 y = [X[i][2] for i in 1:Nt]
