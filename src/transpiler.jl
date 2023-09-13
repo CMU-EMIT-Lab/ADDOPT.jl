@@ -1,51 +1,81 @@
+using LinearAlgebra
 
-function traj_to_lines(id::GMAWDynamicsPrescribed, Δt, U)
-    Nk = length(Δt)
-    @assert Nk == length(U)
-    @assert NK == length(id.p̄)
+function traj_to_lines(id::GMAWDynamicsFullyPrescribed, t, TS, WFS, Trim)
+    Nk = length(t)
+    @assert Nk == length(TS)
+    @assert Nk == length(id.p̄)
 
-    t = cumsum(Δt)
     p̄ = id.p̄
     p̄ = vcat(p̄, [p̄[end]])
 
-    dr = [norm(p̄[k+1] - p̄[k]) for k in 1:Nk]
-    TS = dr ./ Δt
-    WFS = [u[1] for u in U]
-
     lines = []
-    push!(lines, [p̄[1]; TS[1]; WFS[1]])
+    push!(lines, [p̄[1]; TS[1]; WFS[1]; Trim[1]; 0.0])
 
-    for (p, ts, wfs) in zip(p̄, TS, WFS)
-        if [ts; wfs] != lines[end][4:5]
-            push!(lines, [p; ts; wfs])
+    for (time, p, ts, wfs, trim) in zip(t, p̄, TS, WFS, Trim)
+        if ((trim > 0) || (trim == 0 && lines[end][6] > 0)) && norm([ts; wfs; trim] .- lines[end][4:6], Inf) >= 1e-4
+            push!(lines, [p; ts; wfs; trim; time])
         end
     end
+
+    for k in lastindex(lines):-1:2
+        lines[k][end] -= lines[k-1][end]
+    end
+
+    lines[1][end] = 3.0
 
     return lines
 end
 
 function lines_to_rapid(lines)
     s = ""
+    weave_length = 2
+    weave_width = 0.1
+    dwell_left = 0
+    dwell_right = 0
+    weld_mode = 329
+    track_ref_current = 135
 
     was_on = false
     for line in lines
-        x, y, z, ts, wfs = line
+        x, y, z, ts, wfs, trim, time = line
+        x = round(1e3 * x, digits=3)
+        y = round(1e3 * y, digits=3)
+        z = round(1e3 * z, digits=3)
+        ts = round(1e3 * ts, digits=3)
+        wfs = round(1e3 * wfs, digits=3)
+        trim = round(trim, digits=3)
+        time = round(time, digits=4)
+
 
         if !was_on && wfs > 0
-            s *= "WArcLStart [[$(round(1e3x; digits=2)), $(round(1e3y; digits=2)), $(round(1e3z; digits=2))], [0.000260569,-0.674916,-0.737894,0.00491837], [-1,-1,-3,0], [9E+09,9E+09,9E+09,9E+09,9E+09,9E+09]],v100\\V:=$(round(1e3ts; digits=2)),sePrint,bdPrint,fine,tPrintGun\\WObj:=obParamWall\n"
+            s *= "\n"
+            s *= (" "^8) * "exp_bead_data:=[$ts,[$weave_length,$weave_width,$dwell_left,$dwell_right],[$weld_mode,0,$trim,$wfs,0,0,0,0,0],$track_ref_current];\n"
+            s *= (" "^8) * "dest.trans:=[$x,$y,$z];\n"
+            s *= (" "^8) * "MoveL dest,v100\\T:=$(time),fine,tPrintGun\\WObj:=obParamWall;\n"
+            s *= (" "^8) * "WArcLStart dest,v100,exp_start_end,exp_bead_data,fine,tPrintGun\\WObj:=obParamWall;\n"
             was_on = true
-        end
-
-        if was_on && wfs == 0
-            s *= "WArcLEnd [[$(round(1e3x; digits=2)), $(round(1e3y; digits=2)), $(round(1e3z; digits=2))], [0.000260569,-0.674916,-0.737894,0.00491837], [-1,-1,-3,0], [9E+09,9E+09,9E+09,9E+09,9E+09,9E+09]],v100\\V:=$(round(1e3ts; digits=2)),fine,tPrintGun\\WObj:=obParamWall;\n"
+        elseif was_on && wfs == 0
+            s *= (" "^8) * "dest.trans:=[$x,$y,$z];\n"
+            s *= (" "^8) * "WArcLEnd dest,v100,\\Bead:=exp_bead_data,fine,tPrintGun\\WObj:=obParamWall;\n\n"
             was_on = false
+        elseif wfs > 0
+            s *= (" "^8) * "exp_bead_data:=[$ts,[$weave_length,$weave_width,$dwell_left,$dwell_right],[$weld_mode,0,$trim,$wfs,0,0,0,0,0],$track_ref_current];\n"
+            s *= (" "^8) * "dest.trans:=[$x,$y,$z];\n"
+            s *= (" "^8) * "WArcL dest,v100,\\Bead:=exp_bead_data,z0,tPrintGun\\WObj:=obParamWall;\n"
         end
-
-        if wfs > 0
-            s *= "WArcL [[$(round(1e3x; digits=2)), $(round(1e3y; digits=2)), $(round(1e3z; digits=2))], [0.000260569,-0.674916,-0.737894,0.00491837], [-1,-1,-3,0], [9E+09,9E+09,9E+09,9E+09,9E+09,9E+09]],v100\\V:=$(round(1e3ts; digits=2)),z0,tPrintGun\\WObj:=obParamWall;\n"
-        else
-            s *= "MoveL [[$(round(1e3x; digits=2)), $(round(1e3y; digits=2)), $(round(1e3z; digits=2))], [0.000260569,-0.674916,-0.737894,0.00491837], [-1,-1,-3,0], [9E+09,9E+09,9E+09,9E+09,9E+09,9E+09]],v100\\V:=$(round(1e3ts; digits=2)),fine,tPrintGun\\WObj:=obParamWall;\n"
-        end
+            # else
+        #     s *= (" "^8) * "dest.trans:=[$x,$y,$z];\n"
+        #     s *= (" "^8) * "MoveL dest,v100\\T:=$(time),fine,tPrintGun\\WObj:=obParamWall;\n"
+        # end
     end
 
+    x, y, z, ts, wfs, trim, time = lines[end]
+    x = round(1e3 * x, digits=3)
+    y = round(1e3 * y, digits=3)
+    z = round(1e3 * z, digits=3)
+    s *= "\n"
+    s *= (" "^8) * "dest.trans:=[$x,$y,$(z+200)];\n"
+    s *= (" "^8) * "MoveL dest,v100,fine,tPrintGun\\WObj:=obParamWall;\n"
+
+    return s
 end
