@@ -4,11 +4,11 @@ using Interpolations
 using ProgressMeter
 using Statistics
 
-ȳ = 0.1
+ȳ = 0.5 # 0.1
 
-prefix = "."#temp/max final temp nohess 750 iter"
-path = "$prefix/input_visual_$(ȳ).mp4"
-# path = "$prefix/input_visual_$(ȳ).png"
+prefix = "." #"temp/ september short bounded 16 long"
+# path = "$prefix/input_visual_$(ȳ).mp4"
+path = "$prefix/input_visual_$(ȳ).png"
 
 
 U = load_object("$prefix/traj_waam_U_$(ȳ).jld2")
@@ -45,28 +45,32 @@ trim_sim = linear_interpolation(t, trim, extrapolation_bc=Flat()).(t_sim)
 
 # width = 800
 # height = 500
-width = 600
-height = 400
+width = 800
+height = 500
 
-# scale = 1.35
-# Plots.scalefontsizes(scale)
-# p = plot(xlims=(0, t[end]), ylims=(0, 0.150), yticks=0:0.03:0.15, thickness_scaling = scale, xlabel="Time (s)",  size=(width, height), title="Optimized Trajectory for ȳ=$ȳ")
-# tp = twinx(p)
-# plot!(p, t, WFS, label="Wire Feed Speed (m/s)", legend=:topright, ylabel="Speed (m/s)")
-# plot!(p, t, TS, label="Travel Speed (m/s)", legend=:topright)
-# plot!(tp, t, trim, label="Trim", xlims=(0, t[end]),color=:purple, legend=:bottomright, ylabel="Trim", ylim=(0, 1.4))
-# Plots.scalefontsizes(1/scale)
-# savefig(p, path)
+p = plot(xlims=(0, t[end]), ylims=(0, 0.150), yticks=0:0.03:0.15, thickness_scaling = scale, xlabel="Time (s)",  size=(width, height), title="Optimized Trajectory for ȳ=$ȳ",
+titlefontsize=17,
+guidefontsize=15,
+tickfontsize=13,
+legendfontsize=11)
+tp = twinx(p)
+plot!(p, t, WFS, label="Wire Feed Speed (m/s)", legend=:topright, ylabel="Speed (m/s)")
+plot!(p, t, TS, label="Travel Speed (m/s)", legend=:topright)
+plot!(tp, t, trim, label="Trim", xlims=(0, t[end]),color=:purple, legend=:bottomright, ylabel="Trim", ylim=(0, 1.4), titlefontsize=17,
+guidefontsize=15,
+tickfontsize=13,
+legendfontsize=11)
+savefig(p, path)
 
-pr = Progress(Nk_sim ÷ strid)
-# Plots.scalefontsizes(1.5)
+# pr = Progress(Nk_sim ÷ strid)
+# # Plots.scalefontsizes(1.5)
 
-anim = @animate for k in 1:strid:Nk_sim
-    p = plot(t_sim[1:k], WFS_sim[1:k], xlabel="Time (s)", size=(width, height), label="Wire Feed Speed (m/s)", xlims=(0, t_sim[end]), ylims=(0, maximum(WFS)), thickness_scaling = 1.5, fmt=:png)
-    tp = twinx(p)
-    plot!(t_sim[1:k], TS_sim[1:k], label="Travel Speed (m/s)", fmt=:png)
-    plot!(tp, t_sim[1:k], trim_sim[1:k], label="Trim", color=:purple, legend=:bottomright, ylabel="Trim", ylim=(0, 1.4), xlims=(0, t_sim[end]), fmt=:png)
-    next!(pr)
-end
-# Plots.scalefontsizes(1/1.5)
-gif(anim, path, fps=(1 / Δt_sim / strid))
+# anim = @animate for k in 1:strid:Nk_sim
+#     p = plot(t_sim[1:k], WFS_sim[1:k], xlabel="Time (s)", size=(width, height), label="Wire Feed Speed (m/s)", xlims=(0, t_sim[end]), ylims=(0, maximum(WFS)), thickness_scaling = 1.5, fmt=:png)
+#     tp = twinx(p)
+#     plot!(t_sim[1:k], TS_sim[1:k], label="Travel Speed (m/s)", fmt=:png)
+#     plot!(tp, t_sim[1:k], trim_sim[1:k], label="Trim", color=:purple, legend=:bottomright, ylabel="Trim", ylim=(0, 1.4), xlims=(0, t_sim[end]), fmt=:png)
+#     next!(pr)
+# end
+# # Plots.scalefontsizes(1/1.5)
+# gif(anim, path, fps=(1 / Δt_sim / strid))
