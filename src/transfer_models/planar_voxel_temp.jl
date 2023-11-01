@@ -85,6 +85,26 @@ function dynamics_function!(td::PlanarVoxelTemperatureDynamics, ds::AbstractVect
     dTᵢ .+= (1 / (ρ * (l^2) * cₚ)) .* ((Kᵢ .+ Kⱼ) ./ 2) .* (Tⱼ .- Tᵢ)
 
     dT .+= (h∞ / (ρ * l * cₚ)) .* (T∞ .- T) # Convection to environment
+
+    # Convection to environment out left edge
+    dTᵢ = view(rcdT, 1:1, :)
+    Tᵢ = view(rcT, 1:1, :)
+    dTᵢ .+= (h∞ / (ρ * l * cₚ)) .* (T∞ .- Tᵢ)
+
+    # Convection to environment out right edge
+    dTᵢ = view(rcdT, n_cols:n_cols, :)
+    Tᵢ = view(rcT, n_cols:n_cols, :)
+    dTᵢ .+= (h∞ / (ρ * l * cₚ)) .* (T∞ .- Tᵢ)
+
+    # Convection to environment out top edge
+    dTᵢ = view(rcdT, :, 1:1)
+    Tᵢ = view(rcT, :, 1:1)
+    dTᵢ .+= (h∞ / (ρ * l * cₚ)) .* (T∞ .- Tᵢ)
+
+    # Convection to environment out bottom edge
+    dTᵢ = view(rcdT, :, n_rows:n_rows)
+    Tᵢ = view(rcT, :, n_rows:n_rows)
+    dTᵢ .+= (h∞ / (ρ * l * cₚ)) .* (T∞ .- Tᵢ)
 end
 
 function temperature!(td::PlanarVoxelTemperatureDynamics, T, s, zi)
