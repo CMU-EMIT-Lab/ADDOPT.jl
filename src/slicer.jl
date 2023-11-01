@@ -37,15 +37,20 @@ function gen_knots(layers, Nkb, Nkc, Nc)
     return p̄
 end
 
-function gen_fill_ref(p̄, xₙ, yₙ, zₙ; radius=0.0025, l=0.001)
+function gen_fill_ref(p̄, xₙ, yₙ, zₙ; radius=0.0025, l=0.001, x₀=nothing)
     Nkb = length(p̄)
-    x = [zeros(length(xₙ)) for k in 1:Nkb]
+    if isnothing(x₀)
+        x₀ = zeros(length(xₙ))
+    end
+    x = [copy(x₀) for k in 1:Nkb]
 
     for k in 1:Nkb
         x[k] .= map(h -> clamp(((radius + l / 2) - h) / l, 0.0, 1.0), norm.(eachcol([xₙ'; yₙ'; zₙ'] .- p̄[k])))
 
         if k > 1
             x[k] .= max.(x[k], x[k-1])
+        else
+            x[k] .= max.(x[k], x₀)
         end
     end
 
