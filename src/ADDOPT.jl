@@ -739,9 +739,9 @@ function optimize_trajectory(problem::AdditiveProblem;
     solver.options["hsllib"] = HSL_jll.libhsl_path
     solver.options["linear_solver"] = solv
 
-    if solv == "ma77"
-        solver.options["ma77_print_level"] = 2
-    end
+    # if solv == "ma77"
+    #     solver.options["ma77_print_level"] = 2
+    # end
 
     idx = problem.idx
     Nz, Nconstr = idx.Nz, idx.Nconstr
@@ -895,6 +895,7 @@ function optimize_trajectory(problem::AdditiveProblem;
 
     MOI.set(solver, MOI.NLPBlock(), block_data)
     MOI.set(solver, MOI.ObjectiveSense(), MOI.MIN_SENSE)
+    flush(stdout)
     MOI.optimize!(solver)
 
     result = MOI.get(solver, MOI.VariablePrimal(), z)
