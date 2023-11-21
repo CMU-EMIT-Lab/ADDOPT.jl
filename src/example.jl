@@ -1,6 +1,6 @@
 include("ADDOPT.jl")
 using LinearAlgebra
-using .ADDOPT: Furnace, AdditiveProblem, QuadraticObjective, MinTimeObjective, optimize_trajectory, marshall_z
+using .ADDOPT: Furnace, AdditiveProblem, QuadraticObjective, optimize_trajectory, marshall_z
 @time using Plots
 
 Pₘₐₓ = 20000.0  # W
@@ -19,23 +19,17 @@ x̄ = [T∞; 0.9]
 ū = [0.0]
 objective = QuadraticObjective(Q, R, Qf, x̄, ū)
 
-# Nx, Ny, l should be moved to the transfer process
 Nk = 250
 Nc = 3
-problem = AdditiveProblem(process, objective, Nk, 3Nk, Nc, x₀, x̄=[700.0; 1.0], Δtb=0.04, Δtc=0.04, final_constraint=true, xfmin=[0.0; 0.0])
+problem = AdditiveProblem(process, objective, [Nk/5; Nk/5; 3Nk], [Nk; Nk; 2Nk], Nc, x₀, x̄=[700.0; 1.0], Δtb=0.04, Δtc=0.04, final_constraint=true, xfmin=[0.0; 0.0])
 
-# z0 = copy(z) + [repeat([10; 1],4Nk * Nc) .* randn(problem.idx.Nstates * 4Nk * Nc); 200 .* randn(Nk * Nc)]
-z, X, U, Δt, λ = optimize_trajectory(problem; max_iter=1000, c_tol=1.0e-6, xg=[600.0; 0.4])#, z₀=z0)#, λ₀=λ)
+z, X, U, Δt, λ = optimize_trajectory(problem; max_iter=1000, c_tol=1.0e-6, xg=[600.0; 0.4])
 Nt = length(X)
 T = [X[i][1] for i in 1:Nt]
 y = [X[i][2] for i in 1:Nt]
 P = [U[i][1] for i in 1:Nt]
 
-if isnothing(problem.Δtb)
-    t = cumsum(Δt)
-else
-    t = (1:Nt) .* problem.Δtb
-end
+t = cumsum(Δt)
 
 plot(t, T, label="Temperature (K)", xlabel="Time (s)", color="orange")
 plot!(t, P ./ 10, label="Power (W)", color="purple")

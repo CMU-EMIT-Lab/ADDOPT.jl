@@ -1,12 +1,12 @@
 include("ADDOPT.jl")
 using LinearAlgebra
-using .ADDOPT: FurnaceSimple, AdditiveProblem, QuadraticObjective, MinTimeObjective, optimize_trajectory, marshall_z
+using .ADDOPT: FurnaceSimple, AdditiveProblem, QuadraticObjective, optimize_trajectory, marshall_z
 @time using Plots
 
-Pₘₐₓ = 1000.0  # W
+Pₘₐₓ = 2000.0  # W
 T∞ = 293.15    # K
 Tₘₐₓ = 900.0  # K
-h = 10.0      # W/m²K
+h = 1.0      # W/m²K
 m = 0.1        # kg
 cₚ = 502.416   # J/kg 
 process = FurnaceSimple(Pₘₐₓ, T∞, Tₘₐₓ, h, m, cₚ)
