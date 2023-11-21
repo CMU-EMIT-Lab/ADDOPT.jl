@@ -1,18 +1,22 @@
 using StatsFuns
 using Symbolics
+using DataFrames
+using Interpolations
+using CSV: File
 
 struct HardnessDynamics <: PropertyDynamics
-    A::Float64
-    τ::Float64
+    At::Float64 # 1
+    τt::Float64
+    # Aa::Float64 # 2
+    # τa::Float64
 
     n::Int
+
     T_cache::Dict{Tuple{DataType,Int},Any}
     dictlock::Threads.SpinLock
 
-    function HardnessDynamics(A, τ; n=1)
-
-
-        return new(A, τ, n, Dict{Tuple{DataType,Int},Any}(), Threads.SpinLock())
+    function HardnessDynamics(A1, τ1; n=1) #, A2, τ2    
+        return new(A1, τ1, n, Dict{Tuple{DataType,Int},Any}(), Threads.SpinLock())#, A2, τ2,
     end
 end
 
@@ -29,23 +33,9 @@ function dynamics_function!(pd::HardnessDynamics, td::TransferDynamics, dα::Abs
     unlock(pd.dictlock)
 
     temperature!(td, T, s, zi)
-    # @. dα = (1 - α) * pd.A * exp(-pd.τ / T)
-    # dα[T .> 1000.0] .= 0.0
-    # @. dα = (logistic((1000.0 - T)/10.0) - α) * pd.A * exp(-pd.τ / T) 
-    ## @. dα = (1 - α) * pd.A * exp(-pd.τ / T) * logistic((1000.0 - T)/10.0)
-    # @. dα = (1 - α) * rate(T)
-
     if eltype(dα) == Symbolics.Num
         dα .= s .+ α    
     else
-        map!((T, α) -> (logistic((1000.0 - T) / 10.0) - α) * pd.A * exp(-pd.τ / T), dα, T, α)
-    end
-end
-
-function rate(T)
-    if typeof(T) != Symbolics.Num && (T < 800.0 || T > 1100.0)
-        return 0.0
-    else
-        return 3 * ((T - 800) / 100)^3 * ((T - 1100) / 1000)^2
+        map!((T, α) -> (logistic((1000.0 - T) / 10.0) - α) * pd.At * exp(-pd.τt / T) , dα, T, α) #+ (0 - α) * pd.Aa * exp(-pd.τa / T)
     end
 end
