@@ -34,7 +34,7 @@ function animate_measurement_history(Y, dt, n_rows, n_cols; path="animation_meas
         Tk = Y[k]
         T_arr = reshape(Tk, (n_cols, n_rows))'
 
-        hm_T = heatmap(1:n_cols, 1:n_rows, T_arr, aspect_ratio=:equal, clim=scale, title=quantity)
+        hm_T = heatmap(1:n_cols, 1:n_rows, T_arr, aspect_ratio=:equal, clim=scale, xlabel="X (mm)", ylabel="Z (mm)", title=quantity)
         plot(hm_T, size=(width, height), fmt=:png)
 
         next!(p)
