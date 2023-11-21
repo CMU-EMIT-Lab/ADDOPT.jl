@@ -20,6 +20,7 @@ include("transfer_models/planar_voxel_mass_temp.jl")
 include("transfer_models/planar_voxel_temp.jl")
 include("transfer_models/voxel_energy_fill.jl")
 include("transfer_models/voxel_energy.jl")
+include("transfer_models/voxel_prescribed_temp.jl")
 
 struct Process{ID<:InputDynamics,TD<:TransferDynamics,PD<:PropertyDynamics}
     input_dynamics::ID
@@ -93,6 +94,16 @@ function WAAMHardnessPrescribedMotion(nx, ny, nz, l, k, ρ, cₚ, T∞, T₀, wi
     id = GMAWDynamicsFullyPrescribed(nx, ny, nz, l, xₙ, yₙ, zₙ, ρ, cₚ, T∞, Tₗ, wire_diam, h∞, h₀, hₐᵣ, η, r_bead, Δr, p̄, xtorch)
     td = VoxelEnergyDynamics(nx, ny, nz, l, xₙ, yₙ, zₙ, k, ρ, cₚ, T∞, T₀, wire_diam, h∞, h₀, Tmin, Tmax, xfill)
     pd = HardnessDynamics(A, τ, n=n_voxels)
+
+    return Process(id, td, pd)
+end
+
+function WAAMHardnessPrescribedTemp(nvox, Y, A1, τ1, A2, τ2)
+    Tₗ = 1700.0 # K
+
+    id = NullInputDynamics()
+    td = VoxelPrescribedTemperatureDynamics(Y)
+    pd = HardnessDynamics(A1, τ1, A2, τ2, n=nvox)
 
     return Process(id, td, pd)
 end
