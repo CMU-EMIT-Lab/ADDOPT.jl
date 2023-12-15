@@ -101,13 +101,13 @@ function rollout(process::Process, x₀, U, Nk, Δt)
 end
 
 function marshall_z(idx, X, U, Δtb, Δtc; free_time=false)
-    Nz, Nkb, Nkc, Nc, Nx, Nu = idx.Nz, idx.Nkb, idx.Nkc, idx.Nc, idx.Nstates, idx.Nu
+    Nz, Nkb, Nkc, Nc, Nx, Nu = idx.Nz, idx.Nkb, idx.Nkc, idx.Nc, idx.Nx, idx.Nu
 
     z = zeros(Nz)
 
     for c in 1:Nc
 
-        for k in 1:Nkb
+        for k in 1:Nkb[c]
             z[idx.x[c][k]] .= X[c][k]
             z[idx.u[c][k]] .= U[c][k]
 
@@ -116,7 +116,7 @@ function marshall_z(idx, X, U, Δtb, Δtc; free_time=false)
             end
         end
 
-        for k in (Nkb+1):(Nkb+Nkc)
+        for k in (Nkb[c]+1):(Nkb[c]+Nkc[c])
             z[idx.x[c][k]] .= X[c][k]
 
             if free_time
@@ -129,7 +129,7 @@ function marshall_z(idx, X, U, Δtb, Δtc; free_time=false)
 end
 
 function generate_wall_z₀(process::Process{ID,TD,PD}, idx, x₀, Δtb, Δtc; free_time=false) where {ID,TD,PD}
-    Nz, Nkb, Nkc, Nc, Nx, Nu = idx.Nz, idx.Nkb, idx.Nkc, idx.Nc, idx.Nstates, idx.Nu
+    Nz, Nkb, Nkc, Nc, Nx, Nu = idx.Nz, idx.Nkb, idx.Nkc, idx.Nc, idx.Nx, idx.Nu
 
     U = build_U_wall(process.input_dynamics, Nkb, Nc)
     X = rollout(process, x₀, U, Nkb, Nkc, Nc, Δtb, Δtc, free_time=free_time)
