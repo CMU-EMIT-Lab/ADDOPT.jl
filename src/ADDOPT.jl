@@ -727,6 +727,86 @@ function constraint_jacobian_sparsity(idx::ProblemIndex, process::Process, cp::C
     return total_structure, sparsity_cache
 end
 
+function constraint_hessian_structure(prob::AdditiveProblem)
+    structure = []
+    idx = prob.idx
+
+    for cyc in 1:Nc
+        if cyc > 1
+            xₖ = idx.x[cyc-1][end]
+            Δt = idx.Δtc[cyc-1][end]
+            xₖ₊₁ = idx.x[cyc][1]
+            zₖ = xₖ[1]:xₖ₊₁[end]
+        end
+
+        for k in 1:(Nkb[cyc]-1)
+            xₖ = idx.x[cyc][k]
+            uₖ = idx.u[cyc][k]
+            Δt = idx.Δtb[cyc][k]
+            xₖ₊₁ = idx.x[cyc][k+1]
+            uₖ₊₁ = idx.u[cyc][k+1]
+            zₖ = xₖ[1]:uₖ₊₁[end]
+        end
+
+        k = Nkb[cyc]
+        xₖ = idx.x[cyc][k]
+        uₖ = idx.u[cyc][k]
+        Δt = idx.Δtb[cyc][k]
+        xₖ₊₁ = idx.x[cyc][k+1]
+        uₖ₊₁ = idx.u[cyc][k+1]
+        zₖ = xₖ[1]:uₖ₊₁[end]
+
+        for k in (Nkb[cyc]+1):(Nkb[cyc]+Nkc[cyc]-1)
+            xₖ = idx.x[cyc][k]
+            Δt = idx.Δtc[cyc][k]
+            xₖ₊₁ = idx.x[cyc][k+1]
+            zₖ = xₖ[1]:xₖ₊₁[end]
+        end
+    end
+
+    return structure
+end
+
+function constraint_hessian_values(prob::AdditiveProblem, H, z, μ)
+    idx = prob.idx
+
+    for cyc in 1:Nc
+        if cyc > 1
+            xₖ = idx.x[cyc-1][end]
+            Δt = idx.Δtc[cyc-1][end]
+            xₖ₊₁ = idx.x[cyc][1]
+            zₖ = xₖ[1]:xₖ₊₁[end]
+            # ForwardDiff.jacobian!()
+            (r, z) -> total_cooling_constraint!(process, idx, r, xₖ, xₖ₊₁, Δtk, t, zi, cp)
+        end
+
+        for k in 1:(Nkb[cyc]-1)
+            # (r, z) -> total_build_constraint!(process, idx, r, xₖ, uₖ, xₖ₊₁, uₖ₊₁, Δtd, t, zi, cp)
+            xₖ = idx.x[cyc][k]
+            uₖ = idx.u[cyc][k]
+            Δt = idx.Δtb[cyc][k]
+            xₖ₊₁ = idx.x[cyc][k+1]
+            uₖ₊₁ = idx.u[cyc][k+1]
+            zₖ = xₖ[1]:uₖ₊₁[end]
+        end
+
+        k = Nkb[cyc]
+        xₖ = idx.x[cyc][k]
+        uₖ = idx.u[cyc][k]
+        Δt = idx.Δtb[cyc][k]
+        xₖ₊₁ = idx.x[cyc][k+1]
+        uₖ₊₁ = idx.u[cyc][k+1]
+        zₖ = xₖ[1]:uₖ₊₁[end]
+
+        for k in (Nkb[cyc]+1):(Nkb[cyc]+Nkc[cyc]-1)
+            xₖ = idx.x[cyc][k]
+            Δt = idx.Δtc[cyc][k]
+            xₖ₊₁ = idx.x[cyc][k+1]
+            zₖ = xₖ[1]:xₖ₊₁[end]
+        end
+    end
+end
+
 function MOI.eval_objective(prob::AdditiveProblem, z)
     return cost(prob.objective, z, prob.idx)
 end
@@ -744,12 +824,27 @@ function MOI.eval_constraint_jacobian(prob::AdditiveProblem, jac, z)
 end
 
 function MOI.hessian_lagrangian_structure(prob::AdditiveProblem)
-    return objective_hessian_structure(prob.objective, prob.idx)
+    structure = objective_hessian_structure(prob.objective, prob.idx)
+    # append!(structure, constraint_hessian_structure(prob))
+
+    return structure
 end
 
 function MOI.eval_hessian_lagrangian(prob::AdditiveProblem, H, z, σ, μ)
     objective_hessian_values(prob.objective, prob.idx, H, z)
     H .*= σ
+
+    # ### TEMP EXPERIMENT
+    # i = 0
+    # for c in 1:prob.idx.Nc
+    #     for k in 1:prob.idx.Nkb[c]
+    #         i += prob.idx.Nx
+    #         H[(i+1):(i+prob.idx.Nu)] .= μ[406 + (k-1)*406]
+    #         i += prob.idx.Nu
+    #     end
+    # end
+
+    # constraint_hessian_values(prob, H, z, μ)
 end
 
 function MOI.features_available(prob::AdditiveProblem)
@@ -764,7 +859,7 @@ MOI.initialize(prob::AdditiveProblem, features) = nothing
 MOI.jacobian_structure(prob::AdditiveProblem) = prob.constraint_jacobian_sparsity
 
 function optimize_trajectory(problem::AdditiveProblem;
-    tol=1.0e-6, c_tol=1.0e-6, max_iter=500, z₀=nothing, λ₀=nothing, ug=nothing, xg=nothing, solv="ma97")
+    tol=1.0e-6, c_tol=1.0e-6, max_iter=500, z₀=nothing, λ₀=nothing, ug=nothing, xg=nothing, solv="ma97", isqp=false)
 
     solver = Ipopt.Optimizer()
     solver.options["max_iter"] = max_iter
@@ -772,6 +867,12 @@ function optimize_trajectory(problem::AdditiveProblem;
     solver.options["constr_viol_tol"] = c_tol
     solver.options["hsllib"] = HSL_jll.libhsl_path
     solver.options["linear_solver"] = solv
+
+    if isqp
+        solver.options["hessian_constant"] = "yes"
+        solver.options["jac_c_constant"] = "yes"
+        solver.options["jac_d_constant"] = "yes"
+    end
 
     idx = problem.idx
     Nz, Nconstr = idx.Nz, idx.Nconstr
