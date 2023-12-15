@@ -7,9 +7,9 @@ using CSV, Tables
 using StatsFuns
 using Statistics
 
-run_num = 25#4
-η = 0.5
-γ = 1.0 #########################1.0
+run_num = 25
+η = 1.0
+γ = 1.0
 if length(ARGS) ≥ 1
     global γ = parse(Float64, ARGS[1]) / 10.0
     global η = parse(Float64, ARGS[2]) / 10.0
@@ -17,7 +17,7 @@ if length(ARGS) ≥ 1
 end
 
 # Machine parameters
-σ = 0.25e-3 / 2.355#(0.25 / 2.355) * 1e-3 # m 50
+σ = 0.25e-3 / 2.355 # Spot diameter
 vₘₐₓ = 1e3 # m/s
 Pₛₑₜ = 3000.0e-3 # W # kW
 
@@ -38,27 +38,21 @@ n = 20
 nrows = n
 ncols = n
 nvox = nrows * ncols
-l = 5e-3 / n # m, aka 10mm / n 
+l = 5e-3 / n # m, aka 5mm / n 
 
 # Environment parameters
-T∞ = 293.15e-3 # K #kK (reduced to 20C down fromm 600C)
+T∞ = 293.15e-3 # kK
 h∞ = k(0) * 4 / (√(π) * l * n) * η # W / m^2 K
-# h₀ = 300.0 # W / m^2 K
 
-process = PlanarLPBF(nrows, ncols, l, k, ρ, cₚ, T∞, h∞, σ, Pₛₑₜ, Pₛₑₜ, vₘₐₓ, Tₘ, τ, Inf, -Inf)# Tboil, 200.0e-3)
+process = PlanarLPBF(nrows, ncols, l, k, ρ, cₚ, T∞, h∞, σ, Pₛₑₜ, Pₛₑₜ, vₘₐₓ, Tₘ, τ, Tboil, 200.0e-3)
 
-# T̄ = T∞ * ones(nvox)
-T̄ = zeros(nvox)#Tₗ * ones(nvox)
+T̄ = zeros(nvox)
 
-x₀ = T∞ * ones(nvox)#; l; l] # zeros(nvox)
-x̄ = T̄#[T̄; l; l]
+x₀ = T∞ * ones(nvox)
+x̄ = T̄
 ū = zeros(nvox)
 
-# Q = Diagonal(1e0 * ones(nvox)) / nvox#; 0.0; 0.0]
-# R = Diagonal(0 * ones(nvox)) / nvox#; 0.0; 0.0]
 Q = (I - 1/nvox * ones(nvox, nvox))' * (I - 1/nvox * ones(nvox, nvox)) / nvox
-# Q = [Q zeros(nvox, 2);
-#      zeros(2, nvox) zeros(2,2)]
 R = zeros(nvox, nvox)
 Qf =  Q#10*
 objective = QuadraticObjective(Q, R, Qf, x̄, ū)
@@ -73,7 +67,7 @@ Nc = 1
 px = process.transfer_dynamics.xₙ
 pz = process.transfer_dynamics.zₙ
 cumulative_heat = T∞ * ones(nvox)
-x = copy(cumulative_heat)#[copy(cumulative_heat); l; l]
+x = copy(cumulative_heat)
 P0 = []
 X0 = []
 
@@ -124,9 +118,6 @@ problem = AdditiveProblem(process, objective, Nkb, Nkc, Nc, x₀, x̄=x̄, Δtb=
 
 z0 = marshall_z(problem.idx, X0, U0, Δtb, Δtc)
 z, X, U, Δt, λ = optimize_trajectory(problem; max_iter=10_000, z₀=z0, solv="ma97", isqp=true)#"ma77")
-# z = copy(z0)
-# X = copy(X0[1])
-# U = copy(P0)
 GC.gc()
 
 Y = [x[1:nvox] .* 1e3 for x in X]
@@ -142,53 +133,9 @@ save_object("traj_lpbf_ebpbf_$run_num.jld2", z)
 xₙ = process.input_dynamics.xₙ
 zₙ = process.input_dynamics.zₙ
 
-# xt = [x[end-1] for x in X]
-# zt = [x[end] for x in X]
 T = [x[1:nvox] for x in X]
-
-# t = (1:(Nkb)) .* Δtb
-# plot(xlabel="Time (s)", ylabel="σ (K)")
-
 Tm = [mean(temp*1e3) for temp in T]
 Tσ = [std(temp*1e3) for temp in T]
-plot!(p, Tσ, label="Optimized")
-savefig(p, "opt_guess_comparison.svg")
 
-# plot!(t, Tσ, label="Optimized")
-# savefig("std_dev.svg")
-
-# P = [sum(u[1:nvox]) for u in U]
-# plot(P)
-
-# plot(xt, zt)
-# savefig("scan_strat_$run_num.png")
-
-will = vcat([[x; z; Δtb]' for (x, z) in zip(xt, zt)]...)
-CSV.write("scan_strat_$run_num.csv", Tables.table(will; header=["X", "Y", "Δt"]))
-
-# 1 - sigmoid fusion dynamics, no minimum power, maximum number of iterations exceeded
-# 2 - max temp dynamics, maxed out on iterations
-# 3 - direct quadratic temperatue objective 500 um, 10x10
-# 4 - direct quadratic temperatue objective 350 um, 10x10
-# 5 - direct quadratic temperatue objective 250 um, 10x10
-# 6 - direct quadratic temperatue objective, single voxel constraint, 10x10, 1.169e4 solution
-# 7 - direct quadratic temperatue objective, low T goal, single voxel constraint, 10x10, 1.172e4 solution with T\infty as goal 5mmx5mm, 36s
-# 8 - direct quadratic temperatue objective, low T goal, single voxel constraint, 20x20 with 5mmx5mm, 200s
-# 8 - direct quadratic temperatue objective, low T goal, single voxel constraint, 40x40 with 10mmx10mm
-
-#11 - 5mmx5mm, 20x20 (250 um), no preheat, 3kW
-#12 - 5mmx5mm, 20x20 (250 um), no preheat, 1kW
-#13 - 5mmx5mm, 20x20 (250 um), no preheat, 1kW, added 200 above Tl in heuristic step
-#14 - cranked up h∞
-#15 - just initial guess, unoptimized
-
-#18 - readjusted h, up to 13800 from 6800
-#19 - random for reference
-#20 - 3kW, 10μs optimized
-#21 - back to 1kW, 25μs, and with much higher k (42 W/mK) for A36
-
-# New batch, 5x5 at 3kW, 20μs
-
-# 22- dense covariance min, 23 - diagonal min, same result
-# 24 covariance constraint
-# 25 back to voxel constraint, opt vs guess comparison
+# will = vcat([[x; z; Δtb]' for (x, z) in zip(xt, zt)]...)
+# CSV.write("scan_strat_$run_num.csv", Tables.table(will; header=["X", "Y", "Δt"]))
