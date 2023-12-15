@@ -15,10 +15,10 @@ function hessian(o::Objective, hess, z, idx)
     ForwardDiff.hessian!(hess, (Z) -> cost(o, Z, idx), z)
 end
 
-struct QuadraticObjective <: Objective
-    Q::Diagonal{Float64,Vector{Float64}}
-    R::Diagonal{Float64,Vector{Float64}}
-    Qf::Diagonal{Float64,Vector{Float64}}
+struct QuadraticObjective{MatrixType<:AbstractMatrix} <: Objective
+    Q::MatrixType
+    R::MatrixType
+    Qf::MatrixType
     x̄::Vector{Float64}
     ū::Vector{Float64}
 end
@@ -97,7 +97,8 @@ function gradient(o::QuadraticObjective, grad, z, idx)
 
 end
 
-function objective_hessian_structure(o::QuadraticObjective, idx)
+# Hessian structure for diagonal matrices
+function objective_hessian_structure(o::QuadraticObjective{Diagonal{Float64,Vector{Float64}}}, idx)
     Nx, Nkb, Nkc, Nc, Nu = idx.Nx, idx.Nkb, idx.Nkc, idx.Nc, idx.Nu
     rows = []
     cols = []
@@ -125,12 +126,79 @@ function objective_hessian_structure(o::QuadraticObjective, idx)
     return collect(zip(rows, cols))
 end
 
-function objective_hessian_values(o::QuadraticObjective, idx, H, z)
+# Hessian evaluation for diagonal matrices
+function objective_hessian_values(o::QuadraticObjective{Diagonal{Float64,Vector{Float64}}}, idx, H, z)
     Nx, Nkb, Nkc, Nc, Nu = idx.Nx, idx.Nkb, idx.Nkc, idx.Nc, idx.Nu
 
     Qv = diag(o.Q)
     Rv = diag(o.R)
     Qfv = diag(o.Qf)
+
+    i = 0
+    for c in 1:Nc
+        for k in 1:Nkb[c]
+            H[(1+i):(length(Qv)+i)] .= Qv
+            i += length(Qv)
+            H[(1+i):(length(Rv)+i)] .= Rv
+            i += length(Rv)
+        end
+
+        for k in (Nkb[c]+1):(Nkb[c]+Nkc[c])
+            if (c < Nc) || (k < Nkb[c] + Nkc[c])
+                H[(1+i):(length(Qv)+i)] .= Qv
+                i += length(Qv)
+            end
+        end
+    end
+
+    H[(1+i):(length(Qfv)+i)] .= Qfv
+    i += length(Qfv)
+end
+
+# Hessian structure for dense matrices
+function objective_hessian_structure(o::QuadraticObjective{Matrix{Float64}}, idx)
+    Nx, Nkb, Nkc, Nc, Nu = idx.Nx, idx.Nkb, idx.Nkc, idx.Nc, idx.Nu
+    rows = []
+    cols = []
+
+    for c in 1:Nc
+        for k in 1:Nkb[c]
+            for i in 1:Nx
+                append!(rows, idx.x[c][k])
+                append!(cols, idx.x[c][k][i] * ones(Nx))
+            end
+
+            for i in 1:Nu
+                append!(rows, idx.u[c][k])
+                append!(cols, idx.u[c][k][i] * ones(Nu))
+            end
+        end
+
+        for k in (Nkb[c]+1):(Nkb[c]+Nkc[c])
+            if (c < Nc) || (k < Nkb[c] + Nkc[c])
+                for i in 1:Nx
+                    append!(rows, idx.x[c][k])
+                    append!(cols, idx.x[c][k][i] * ones(Nx))
+                end
+            end
+        end
+    end
+
+    for i in 1:Nx
+        append!(rows, idx.x[Nc][end])
+        append!(cols, idx.x[Nc][end][i] * ones(Nx))
+    end
+
+    return collect(zip(rows, cols))
+end
+
+# Hessian evaluation for dense matrices
+function objective_hessian_values(o::QuadraticObjective{Matrix{Float64}}, idx, H, z)
+    Nx, Nkb, Nkc, Nc, Nu = idx.Nx, idx.Nkb, idx.Nkc, idx.Nc, idx.Nu
+
+    Qv = vec(o.Q)
+    Rv = vec(o.R)
+    Qfv = vec(o.Qf)
 
     i = 0
     for c in 1:Nc
@@ -182,7 +250,7 @@ function cost(o::TimeWeightedQuadraticObjective, z, idx)
 
             cost += 0.5 * dot(ex, Q[zi], ex)
             cost += 0.5 * dot(eu, R, eu)
-            cost += 0.5 * (Δt-Δt̄b)^2
+            cost += 0.5 * (Δt - Δt̄b)^2
         end
 
         for k in (Nkb[c]+1):(Nkb[c]+Nkc[c])
@@ -220,7 +288,7 @@ function gradient(o::TimeWeightedQuadraticObjective, grad, z, idx)
 
             mul!(view(grad, idx.x[c][k]), Q[zi], ex)
             mul!(view(grad, idx.u[c][k]), R, eu)
-            grad[idx.Δtb[c][k]] = Δt-Δt̄b
+            grad[idx.Δtb[c][k]] = Δt - Δt̄b
         end
 
         for k in (Nkb[c]+1):(Nkb[c]+Nkc[c])
