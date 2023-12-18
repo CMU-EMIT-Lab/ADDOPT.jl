@@ -49,6 +49,7 @@ include("visualization.jl")
 include("slicer.jl")
 include("goal_optimizer.jl")
 include("transpiler.jl")
+include("interpolator.jl")
 
 struct CachePackage
     fₖ_cache::Dict{Tuple{DataType,Int},Any}
@@ -915,10 +916,8 @@ function optimize_trajectory(problem::AdditiveProblem;
     println("Checking objective function...")
     @time MOI.eval_objective(problem, z₀)
     @time MOI.eval_objective(problem, z₀)
-    @time MOI.eval_objective(problem, z₀)
     @show MOI.eval_objective(problem, z₀)
     println("Checking objective gradient...")
-    @time MOI.eval_objective_gradient(problem, gt, z₀)
     @time MOI.eval_objective_gradient(problem, gt, z₀)
     @time MOI.eval_objective_gradient(problem, gt, z₀)
 
@@ -937,10 +936,8 @@ function optimize_trajectory(problem::AdditiveProblem;
     println("Checking constraint function...")
     @time MOI.eval_constraint(problem, ct, z₀)
     @time MOI.eval_constraint(problem, ct, z₀)
-    @time MOI.eval_constraint(problem, ct, z₀)
     @show maximum(abs.(ct))
     println("Checking constraint jacobian...")
-    @time MOI.eval_constraint_jacobian(problem, jt, z₀)
     @time MOI.eval_constraint_jacobian(problem, jt, z₀)
     @time MOI.eval_constraint_jacobian(problem, jt, z₀)
 
