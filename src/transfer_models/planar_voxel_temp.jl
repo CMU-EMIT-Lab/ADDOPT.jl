@@ -13,21 +13,29 @@ struct PlanarVoxelTemperatureDynamics <: TransferDynamics
 
     h∞::Float64
 
-    Tmax::Float64
-    Tmin::Float64
+    Tmax::Vector{Float64}
+    Tmin::Vector{Float64}
 
-    K_cache::Dict{Tuple{DataType, Int},Any}
+    K_cache::Dict{Tuple{DataType,Int},Any}
 
     function PlanarVoxelTemperatureDynamics(nrows, ncols, l, xₙ, zₙ, k, ρ, cₚ, T∞, h∞, Tmax, Tmin)
-        K = Dict{Tuple{DataType, Int},Any}()
+        K = Dict{Tuple{DataType,Int},Any}()
 
-        return new(nrows, ncols, l, xₙ, zₙ, k, ρ, cₚ, T∞, h∞, Tmax, Tmin, K)#, B, C, K, T)
+        if isa(Tmax, Number)
+            Tmax = Tmax .* ones(nrows * ncols)
+        end
+
+        if isa(Tmin, Number)
+            Tmin = Tmin .* ones(nrows * ncols)
+        end
+
+        return new(nrows, ncols, l, xₙ, zₙ, k, ρ, cₚ, T∞, h∞, Tmax, Tmin, K)
     end
 end
 
 @inline Ns(td::PlanarVoxelTemperatureDynamics)::Int = td.nrows * td.ncols
-state_min(td::PlanarVoxelTemperatureDynamics) = td.Tmin * ones(Ns(td))
-state_max(td::PlanarVoxelTemperatureDynamics) = td.Tmax * ones(Ns(td)) #Inf * ones(Ns(td))
+state_min(td::PlanarVoxelTemperatureDynamics) = td.Tmin
+state_max(td::PlanarVoxelTemperatureDynamics) = td.Tmax
 
 function dynamics_function!(td::PlanarVoxelTemperatureDynamics, ds::AbstractVector{Ty}, s, t, zi) where {Ty}
     n_rows, n_cols = td.nrows, td.ncols

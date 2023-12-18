@@ -177,7 +177,7 @@ function PlanarWAAMPrescribedMotion(nrows, ncols, l, w, kₘ, kₐ, ρₘ, ρₐ
     return Process(id, td, pd)
 end
 
-function PlanarLPBF(nrows, ncols, l, k, ρ, cₚ, T∞, h∞, σ, Pₘₐₓ, Pₘᵢₙ, vₘₐₓ, Tmelt, τ, Tmax, Tmin)
+function PlanarLPBF(nrows, ncols, l, k, ρ, cₚ, T∞, h∞, σ, Pₘₐₓ, Pₘᵢₙ, vₘₐₓ, Tmax, Tmin)
     n_voxels = nrows * ncols
 
     # Generate x-z matrix/vector
@@ -191,7 +191,6 @@ function PlanarLPBF(nrows, ncols, l, k, ρ, cₚ, T∞, h∞, σ, Pₘₐₓ, P�
 
     id = PlanarHeatsourceDynamics(nrows, ncols, l, xₙ, zₙ, Pₘₐₓ, Pₘᵢₙ, ρ, cₚ, σ, vₘₐₓ)
     td = PlanarVoxelTemperatureDynamics(nrows, ncols, l, xₙ, zₙ, k, ρ, cₚ, T∞, h∞, Tmax, Tmin)
-    # pd = FusionDynamics(Tmelt, τ; n=n_voxels)
     pd = NullPropertyDynamics()
 
     return Process(id, td, pd)
