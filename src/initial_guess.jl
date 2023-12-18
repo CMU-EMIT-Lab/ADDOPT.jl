@@ -139,3 +139,33 @@ function generate_wall_z₀(process::Process{ID,TD,PD}, idx, x₀, Δtb, Δtc; f
     return z₀
 end
 
+function initial_guess(process::Process{PlanarHeatsourceDynamics, PlanarVoxelTemperatureDynamics, NullPropertyDynamics}, mask, x₀, Nkc, Δtb, Δtc, T_melt)
+    # generate initial guess
+    x = copy(x₀)
+    U0 = []
+    X0 = []
+    Nkb = 0
+
+    u = mask ./ sum(mask) * process.input_dynamics.Pₘₐₓ
+
+    f!(dx, x, u, t, zi) = combined_dynamics!(dx, x, u, process, t, zi, Δtb)
+
+    while minimum(x[mask]) ≤ T_melt
+        Nkb += 1
+
+        push!(X0, x)
+        push!(U0, u)
+        x = step_RK4(f!, x, u, Δtb, 0.0, 1)
+    end
+    @show Nkb
+    
+    push!(X0, step_RK4(f!, X0[end], U0[end], Δtc, 0.0, 1))
+    for k in 1:(Nkc-1)
+        push!(X0, step_RK4(f!, X0[end], zeros(length(x₀)), Δtc, 0.0, 1))
+    end
+
+    U0 = [U0,]
+    X0 = [X0,]
+
+    return Nkb, U0, X0
+end
