@@ -1,4 +1,5 @@
 using LinearAlgebra
+using SparseArrays
 using ForwardDiff
 
 abstract type Objective end
@@ -161,33 +162,33 @@ function objective_hessian_structure(o::QuadraticObjective{Matrix{Float64}}, idx
     rows = []
     cols = []
 
+    Qs = sparse(o.Q)
+    Rs = sparse(o.R)
+    Qfs = sparse(o.Qf)
+
+    Qr, Qc, _ = findnz(Qs)
+    Rr, Rc, _ = findnz(Rs)
+    Qfr, Qfc, _ = findnz(Qfs)
+
     for c in 1:Nc
         for k in 1:Nkb[c]
-            for i in 1:Nx
-                append!(rows, idx.x[c][k])
-                append!(cols, idx.x[c][k][i] * ones(Nx))
-            end
+            append!(rows, Qr .+ idx.x[c][k][1] .- 1)
+            append!(cols, Qc .+ idx.x[c][k][1] .- 1)
 
-            for i in 1:Nu
-                append!(rows, idx.u[c][k])
-                append!(cols, idx.u[c][k][i] * ones(Nu))
-            end
+            append!(rows, Rr .+ idx.u[c][k][1] .- 1)
+            append!(cols, Rc .+ idx.u[c][k][1] .- 1)
         end
 
         for k in (Nkb[c]+1):(Nkb[c]+Nkc[c])
             if (c < Nc) || (k < Nkb[c] + Nkc[c])
-                for i in 1:Nx
-                    append!(rows, idx.x[c][k])
-                    append!(cols, idx.x[c][k][i] * ones(Nx))
-                end
+                append!(rows, Qr .+ idx.x[c][k][1] .- 1)
+                append!(cols, Qc .+ idx.x[c][k][1] .- 1)
             end
         end
     end
 
-    for i in 1:Nx
-        append!(rows, idx.x[Nc][end])
-        append!(cols, idx.x[Nc][end][i] * ones(Nx))
-    end
+    append!(rows, Qfr .+ idx.x[Nc][end][1] .- 1)
+    append!(cols, Qfc .+ idx.x[Nc][end][1] .- 1)
 
     return collect(zip(rows, cols))
 end
@@ -196,9 +197,9 @@ end
 function objective_hessian_values(o::QuadraticObjective{Matrix{Float64}}, idx, H, z)
     Nx, Nkb, Nkc, Nc, Nu = idx.Nx, idx.Nkb, idx.Nkc, idx.Nc, idx.Nu
 
-    Qv = vec(o.Q)
-    Rv = vec(o.R)
-    Qfv = vec(o.Qf)
+    Qv = nonzeros(sparse(o.Q))
+    Rv = nonzeros(sparse(o.R))
+    Qfv = nonzeros(sparse(o.Qf))
 
     i = 0
     for c in 1:Nc
