@@ -930,7 +930,6 @@ function optimize_trajectory(problem::AdditiveProblem;
         cs = [c for (r, c) in structure]
         @time MOI.eval_hessian_lagrangian(problem, H0, z₀, 1.0, μ0)
         @time MOI.eval_hessian_lagrangian(problem, H0, z₀, 1.0, μ0)
-        @time MOI.eval_hessian_lagrangian(problem, H0, z₀, 1.0, μ0)
     end
 
     println("Checking constraint function...")
