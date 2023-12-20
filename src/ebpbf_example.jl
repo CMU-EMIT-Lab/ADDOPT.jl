@@ -46,8 +46,8 @@ T∞ = 293.15e-3 # kK
 h∞ = k(0) * 4 / (√(π) * l * n) * η # W / m^2 K
 
 Tmax = Tboil * ones(nvox)
-Tmax[.!mask] .= Tₛ
-process = PlanarLPBF(nrows, ncols, l, k, ρ, cₚ, T∞, h∞, σ, Pₛₑₜ, Pₛₑₜ, vₘₐₓ, Tmax, 200.0e-3)
+Tmax[.!mask] .= Tₛ - 10e-3
+process = PlanarLPBF(nrows, ncols, l, k, ρ, cₚ, T∞, h∞, σ, Pₛₑₜ, Pₛₑₜ, vₘₐₓ, Tmax, 200.0e-3, Inf*mask)
 
 T̄ = zeros(nvox)
 
@@ -55,7 +55,7 @@ x₀ = T∞ * ones(nvox)
 x̄ = T̄
 ū = zeros(nvox)
 
-Q = (I - 1 / nₕ * (mask * mask'))' * (I - 1 / nₕ * (mask * mask')) / nₕ
+Q = (diagm(mask) - (1 / nₕ) * (mask * mask'))' * (diagm(mask) - (1 / nₕ) * (mask * mask')) / (nₕ-1)
 R = zeros(nvox, nvox)
 Qf = Q
 objective = QuadraticObjective(Q, R, Qf, x̄, ū)
@@ -66,9 +66,9 @@ Nc = 1
 Δtc = 100e-6 # s, aka 100μs
 
 T_melt = Tₗ + 0.0e-3
-Nkb, U0, X0 = initial_guess(process, mask, x₀, Nkc, Δtb, Δtc, T_melt - 50e-3)
+Nkb, U0, X0 = initial_guess(process, mask, x₀, Nkc, Δtb, Δtc, T_melt)
 
-problem = AdditiveProblem(process, objective, Nkb, Nkc, Nc, x₀, xfmin=T_melt * mask, x̄=Tmax, Δtb=Δtb, Δtc=Δtc, final_constraint=true, hessian=true)
+problem = AdditiveProblem(process, objective, Nkb, Nkc, Nc, x₀, xfmin=(T_melt+100e-3) * mask, x̄=Tmax, Δtb=Δtb, Δtc=Δtc, final_constraint=true, hessian=true)
 z0 = marshall_z(problem.idx, X0, U0, Δtb, Δtc)
 
 z, X, U, Δt, λ = optimize_trajectory(problem; max_iter=10_000, z₀=z0, solv="ma97", isqp=true)
@@ -92,7 +92,7 @@ animate_measurement_history([u[1:nvox] .* 1e3 for u in U], Δtb * 1e3, nrows, nc
 U0c = U0[1]
 Uo = U[1:Nkb]
 Δtm = 1e-6
-function interpolate_and_animate(U, stri; method=:random)
+function approximate_and_animate(U, stri; method=:random)
     simsub = 20
     Δtsim = Δtm / simsub
     UP, xtzt, Dt = field_to_spots(t[1:Nkb] ./ 1e3, U, Δtm, Pₛₑₜ, vₘₐₓ, xₙ, zₙ, σ, l; method=method)
@@ -109,10 +109,10 @@ end
 # 1 - random, no travel; 2 - greedy, no travel; 
 # 3 - random, travel; 4 - greedy, travel
 
-t_sim_ur, Usim_ur, Xsim_ur, points_ur = interpolate_and_animate(U0c, "uniform"; method=:random)
-t_sim_ug, Usim_ug, Xsim_ug, points_ug = interpolate_and_animate(U0c, "uniform"; method=:greedy)
-t_sim_or, Usim_or, Xsim_or, points_or = interpolate_and_animate(Uo, "optimized"; method=:random)
-t_sim_og, Usim_og, Xsim_og, points_og = interpolate_and_animate(Uo, "optimized"; method=:greedy)
+t_sim_ur, Usim_ur, Xsim_ur, points_ur = approximate_and_animate(U0c, "uniform"; method=:random)
+t_sim_ug, Usim_ug, Xsim_ug, points_ug = approximate_and_animate(U0c, "uniform"; method=:greedy)
+t_sim_or, Usim_or, Xsim_or, points_or = approximate_and_animate(Uo, "optimized"; method=:random)
+t_sim_og, Usim_og, Xsim_og, points_og = approximate_and_animate(Uo, "optimized"; method=:greedy)
 
 T = [x[1:nvox] for x in X]
 Tm = [mean(temp[mask] * 1e3) for temp in T]
@@ -124,22 +124,22 @@ T0σ = [std(x[mask] * 1e3) for x in T0]
 
 var_comp = plot(xlabel="Time (ms)", ylabel="Standard Deviation of Temperature [K]", tickfontsize=14, labelfontsize=16, legendfontsize=16, size=(900, 900), widen=true)
 plot!(var_comp, t, T0σ, linewidth=3, thickness_scaling=1, label="Uniform Power Distribution, Ideal", c="lightblue", linestyle=:dot)
-plot!(var_comp, t_sim_ur .* 1e3, [std(t[mask] .* 1e3) for t in Xsim_ur], linewidth=3, thickness_scaling=1, label="Uniform Power with Random Interpolation", c="blue")
-plot!(var_comp, t_sim_ug .* 1e3, [std(t[mask] .* 1e3) for t in Xsim_ug], linewidth=3, thickness_scaling=1, label="Uniform Power with Greedy Interpolation", c="darkblue")
+plot!(var_comp, t_sim_ur .* 1e3, [std(t[mask] .* 1e3) for t in Xsim_ur], linewidth=3, thickness_scaling=1, label="Uniform Power with Random Approximation", c="blue")
+plot!(var_comp, t_sim_ug .* 1e3, [std(t[mask] .* 1e3) for t in Xsim_ug], linewidth=3, thickness_scaling=1, label="Uniform Power with Greedy Approximation", c="darkblue")
 plot!(var_comp, t, Tσ, linewidth=3, thickness_scaling=1, label="Optimized Power Distribution, Ideal", c="indianred", linestyle=:dot)
-plot!(var_comp, t_sim_or .* 1e3, [std(t[mask] .* 1e3) for t in Xsim_or], linewidth=3, thickness_scaling=1, label="Optimized Power with Random Interpolation", c="red")
-plot!(var_comp, t_sim_og .* 1e3, [std(t[mask] .* 1e3) for t in Xsim_og], linewidth=3, thickness_scaling=1, label="Optimized Power with Greedy Interpolation", c="darkred")
-savefig(var_comp, "var_comp.svg")
+plot!(var_comp, t_sim_or .* 1e3, [std(t[mask] .* 1e3) for t in Xsim_or], linewidth=3, thickness_scaling=1, label="Optimized Power with Random Approximation", c="red")
+plot!(var_comp, t_sim_og .* 1e3, [std(t[mask] .* 1e3) for t in Xsim_og], linewidth=3, thickness_scaling=1, label="Optimized Power with Greedy Approximation", c="darkred")
+# savefig(var_comp, "var_comp.svg")
 savefig(var_comp, "var_comp.png")
 
 var_comp_int = plot(xlabel="Time (ms)", ylabel="Integral of Temperature Variance [K²s]", tickfontsize=14, labelfontsize=16, legendfontsize=16, size=(900, 900), widen=true)
 plot!(var_comp_int, t, cumsum(T0σ.^2 .*Δt), linewidth=3, thickness_scaling=1, label="Uniform Power Distribution, Ideal", c="lightblue", linestyle=:dot)
-plot!(var_comp_int, t_sim_ur .* 1e3, cumsum([var(t[mask] .* 1e3) for t in Xsim_ur].*Δtm/20), linewidth=3, thickness_scaling=1, label="Uniform Power with Random Interpolation", c="blue")
-plot!(var_comp_int, t_sim_ug .* 1e3, cumsum([var(t[mask] .* 1e3) for t in Xsim_ug].*Δtm/20), linewidth=3, thickness_scaling=1, label="Uniform Power with Greedy Interpolation", c="darkblue")
+plot!(var_comp_int, t_sim_ur .* 1e3, cumsum([var(t[mask] .* 1e3) for t in Xsim_ur].*Δtm/20), linewidth=3, thickness_scaling=1, label="Uniform Power with Random Approximation", c="blue")
+plot!(var_comp_int, t_sim_ug .* 1e3, cumsum([var(t[mask] .* 1e3) for t in Xsim_ug].*Δtm/20), linewidth=3, thickness_scaling=1, label="Uniform Power with Greedy Approximation", c="darkblue")
 plot!(var_comp_int, t, cumsum(Tσ.^2 .*Δt), linewidth=3, thickness_scaling=1, label="Optimized Power Distribution, Ideal", c="indianred", linestyle=:dot)
-plot!(var_comp_int, t_sim_or .* 1e3, cumsum([var(t[mask] .* 1e3) for t in Xsim_or].*Δtm/20), linewidth=3, thickness_scaling=1, label="Optimized Power with Random Interpolation", c="red")
-plot!(var_comp_int, t_sim_og .* 1e3, cumsum([var(t[mask] .* 1e3) for t in Xsim_og].*Δtm/20), linewidth=3, thickness_scaling=1, label="Optimized Power with Greedy Interpolation", c="darkred")
-savefig(var_comp_int, "var_comp_int.svg")
+plot!(var_comp_int, t_sim_or .* 1e3, cumsum([var(t[mask] .* 1e3) for t in Xsim_or].*Δtm/20), linewidth=3, thickness_scaling=1, label="Optimized Power with Random Approximation", c="red")
+plot!(var_comp_int, t_sim_og .* 1e3, cumsum([var(t[mask] .* 1e3) for t in Xsim_og].*Δtm/20), linewidth=3, thickness_scaling=1, label="Optimized Power with Greedy Approximation", c="darkred")
+# savefig(var_comp_int, "var_comp_int.svg")
 savefig(var_comp_int, "var_comp_int.png")
 
 function comp_plot(n_div, X0, X, quantity, scale, title)
@@ -172,9 +172,11 @@ end
 
 temp_comp = comp_plot(4, T0, T, "Temperature [K]", (1000, 3000), "Temperature Evolution")
 savefig(temp_comp, "temp_comp.svg")
+savefig(temp_comp, "temp_comp.png")
 
-power_comp = comp_plot(3, U0c, Uo, "Power [W]", (0, round(Pₛₑₜ .* 1e3 / nₕ * 2)), "Power Evolution")
+power_comp = comp_plot(4, U0c, Uo, "Power [W]", (0, round(Pₛₑₜ .* 1e3 / nₕ * 2)), "Power Evolution")
 savefig(power_comp, "power_comp.svg")
+savefig(power_comp, "power_comp.png")
 
 CSV.write("scan_strat_$(run_num)_uniform_random.csv", Tables.table(vcat([[x[1]; x[2]; Δtm]' for x in points_ur]...); header=["X", "Y", "Δt"]))
 CSV.write("scan_strat_$(run_num)_uniform_greedy.csv", Tables.table(vcat([[x[1]; x[2]; Δtm]' for x in points_ug]...); header=["X", "Y", "Δt"]))
