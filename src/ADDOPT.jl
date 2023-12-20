@@ -49,7 +49,7 @@ include("visualization.jl")
 include("slicer.jl")
 include("goal_optimizer.jl")
 include("transpiler.jl")
-include("interpolator.jl")
+include("approximator.jl")
 
 struct CachePackage
     fₖ_cache::Dict{Tuple{DataType,Int},Any}

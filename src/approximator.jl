@@ -5,12 +5,12 @@ function field_to_spots(ts, U_ref, Δt, P, v, px, pz, σ, l; method=:random)
     tf = ts[end]
     nvox = length(px)
     U, X, Dt = [], [], []
-    nf = 20
+    nf = 30
     Uin = [zeros(nvox) for i in 1:(nf+1)]
     Dtin = zeros(nf + 1)
     k = 1
     t = 0.0
-    pc, pn = zeros(2), zeros(2)
+    pc, pn = l*ones(2), l*ones(2)
     oldidx = 1
 
     p = Progress(Int(round(tf * 1e6)); dt=0.25)
@@ -52,7 +52,7 @@ function greedy_selection(pc, U_ref, Δt, px, pz, l, σ, v, P, U, Dt, Uin, Dtin)
     Û = zeros(nvox)
     err = zeros(nvox)
     err .= Inf
-    t_window = 100e-6
+    t_window = nvox / 3 * 1e-6
 
     t̂ = 0.0
     j = 0
