@@ -17,9 +17,10 @@ struct PlanarHeatsourceDynamics <: InputDynamics
     cₚ::Float64
 
     vₘₐₓ::Float64
+    Plim::Vector{Float64}
 
-    function PlanarHeatsourceDynamics(nrows, ncols, l, xₙ, zₙ, Pₘₐₓ, Pₘᵢₙ, ρ, cₚ, σ, vₘₐₓ)
-        return new(nrows, ncols, l, xₙ, zₙ, Pₘₐₓ, Pₘᵢₙ, σ, ρ, cₚ, vₘₐₓ)
+    function PlanarHeatsourceDynamics(nrows, ncols, l, xₙ, zₙ, Pₘₐₓ, Pₘᵢₙ, ρ, cₚ, σ, vₘₐₓ, Plim)
+        return new(nrows, ncols, l, xₙ, zₙ, Pₘₐₓ, Pₘᵢₙ, σ, ρ, cₚ, vₘₐₓ, Plim)
     end
 end
 
@@ -33,7 +34,7 @@ ineq_min(id::PlanarHeatsourceDynamics) = [id.Pₘᵢₙ]
 ineq_max(id::PlanarHeatsourceDynamics) = [id.Pₘₐₓ]
 
 input_min(id::PlanarHeatsourceDynamics) = zeros(id.nrows * id.ncols)
-input_max(id::PlanarHeatsourceDynamics) = Inf * ones(id.nrows * id.ncols)
+input_max(id::PlanarHeatsourceDynamics) = id.Plim
 input_idle(id::PlanarHeatsourceDynamics) = zeros(id.nrows * id.ncols)
 
 state_min(id::PlanarHeatsourceDynamics) = []
