@@ -1,12 +1,13 @@
 struct PlanarVoxelTemperatureDynamics <: TransferDynamics
     nrows::Int
     ncols::Int
+    ndeep::Int
 
     l::Float64
     xₙ::Vector{Float64}
     zₙ::Vector{Float64}
 
-    k
+    k::Float64
     ρ::Float64
     cₚ::Float64
     T∞::Float64
@@ -16,103 +17,104 @@ struct PlanarVoxelTemperatureDynamics <: TransferDynamics
     Tmax::Vector{Float64}
     Tmin::Vector{Float64}
 
-    K_cache::Dict{Tuple{DataType,Int},Any}
-
-    function PlanarVoxelTemperatureDynamics(nrows, ncols, l, xₙ, zₙ, k, ρ, cₚ, T∞, h∞, Tmax, Tmin)
-        K = Dict{Tuple{DataType,Int},Any}()
+    function PlanarVoxelTemperatureDynamics(nrows, ncols, ndeep, l, xₙ, zₙ, k, ρ, cₚ, T∞, h∞, Tmax, Tmin)
 
         if isa(Tmax, Number)
-            Tmax = Tmax .* ones(nrows * ncols)
+            Tmax = Tmax .* ones(nrows * ncols * ndeep)
         end
 
         if isa(Tmin, Number)
-            Tmin = Tmin .* ones(nrows * ncols)
+            Tmin = Tmin .* ones(nrows * ncols * ndeep)
         end
 
-        return new(nrows, ncols, l, xₙ, zₙ, k, ρ, cₚ, T∞, h∞, Tmax, Tmin, K)
+        return new(nrows, ncols, ndeep, l, xₙ, zₙ, k, ρ, cₚ, T∞, h∞, Tmax, Tmin)
     end
 end
 
-@inline Ns(td::PlanarVoxelTemperatureDynamics)::Int = td.nrows * td.ncols
+@inline Ns(td::PlanarVoxelTemperatureDynamics)::Int = td.nrows * td.ncols * td.ndeep
 state_min(td::PlanarVoxelTemperatureDynamics) = td.Tmin
 state_max(td::PlanarVoxelTemperatureDynamics) = td.Tmax
 
 function dynamics_function!(td::PlanarVoxelTemperatureDynamics, ds::AbstractVector{Ty}, s, t, zi) where {Ty}
-    n_rows, n_cols = td.nrows, td.ncols
+    nrows, ncols, ndeep = td.nrows, td.ncols, td.ndeep
     l, xₙ, zₙ = td.l, td.xₙ, td.zₙ
     k, ρ, cₚ, T∞ = td.k, td.ρ, td.cₚ, td.T∞
     h∞ = td.h∞
 
-    thread::Int = Threads.threadid()
-    K = get!(td.K_cache, (Ty, thread)) do
-        zeros(Ty, n_rows * n_cols)
-    end::Vector{Ty}
+    α = k / (ρ * cₚ)
 
-    N = Ns(td)
     dT = ds
     T = s
 
-    map!(k, K, T)
-
-    rcT = reshape(T, (n_cols, n_rows))
-    rcdT = reshape(dT, (n_cols, n_rows))
-    rcK = reshape(view(K, :), (n_cols, n_rows))
-
     dT .= 0
+    rcT = reshape(T, (ncols, nrows, ndeep))
+    rcdT = reshape(dT, (ncols, nrows, ndeep))
+
+    # Down
+    dTᵢ = view(rcdT, :, :, 1:(ndeep-1))
+    Tᵢ = view(rcT, :, :, 1:(ndeep-1))
+    Tⱼ = view(rcT, :, :, 2:ndeep)
+    dTᵢ .+= (α / l^2) .* (Tⱼ .- Tᵢ)
+
+    # Up
+    dTᵢ = view(rcdT, :, :, 2:ndeep)
+    Tᵢ = view(rcT, :, :, 2:ndeep)
+    Tⱼ = view(rcT, :, :, 1:(ndeep-1))
+    dTᵢ .+= (α / l^2) .* (Tⱼ .- Tᵢ)
 
     # From top
-    dTᵢ = view(rcdT, :, 1:(n_rows-1))
-    Tᵢ = view(rcT, :, 1:(n_rows-1))
-    Tⱼ = view(rcT, :, 2:n_rows)
-    Kᵢ = view(rcK, :, 1:(n_rows-1))
-    Kⱼ = view(rcK, :, 2:n_rows)
-    dTᵢ .+= (1 / (ρ * (l^2) * cₚ)) .* ((Kᵢ .+ Kⱼ) ./ 2) .* (Tⱼ .- Tᵢ)
+    dTᵢ = view(rcdT, :, 1:(nrows-1), :)
+    Tᵢ = view(rcT, :, 1:(nrows-1), :)
+    Tⱼ = view(rcT, :, 2:nrows, :)
+    dTᵢ .+= (α / l^2) .* (Tⱼ .- Tᵢ)
 
     # From bottom
-    dTᵢ = view(rcdT, :, 2:n_rows)
-    Tᵢ = view(rcT, :, 2:n_rows)
-    Tⱼ = view(rcT, :, 1:(n_rows-1))
-    Kᵢ = view(rcK, :, 2:n_rows)
-    Kⱼ = view(rcK, :, 1:(n_rows-1))
-    dTᵢ .+= (1 / (ρ * (l^2) * cₚ)) .* ((Kᵢ .+ Kⱼ) ./ 2) .* (Tⱼ .- Tᵢ)
+    dTᵢ = view(rcdT, :, 2:nrows, :)
+    Tᵢ = view(rcT, :, 2:nrows, :)
+    Tⱼ = view(rcT, :, 1:(nrows-1), :)
+    dTᵢ .+= (α / l^2) .* (Tⱼ .- Tᵢ)
 
     # From left
-    dTᵢ = view(rcdT, 2:n_cols, :)
-    Tᵢ = view(rcT, 2:n_cols, :)
-    Tⱼ = view(rcT, 1:(n_cols-1), :)
-    Kᵢ = view(rcK, 2:n_cols, :)
-    Kⱼ = view(rcK, 1:(n_cols-1), :)
-    dTᵢ .+= (1 / (ρ * (l^2) * cₚ)) .* ((Kᵢ .+ Kⱼ) ./ 2) .* (Tⱼ .- Tᵢ)
+    dTᵢ = view(rcdT, 2:ncols, :, :)
+    Tᵢ = view(rcT, 2:ncols, :, :)
+    Tⱼ = view(rcT, 1:(ncols-1), :, :)
+    dTᵢ .+= (α / l^2) .* (Tⱼ .- Tᵢ)
 
     # From right
-    dTᵢ = view(rcdT, 1:(n_cols-1), :)
-    Tᵢ = view(rcT, 1:(n_cols-1), :)
-    Tⱼ = view(rcT, 2:n_cols, :)
-    Kᵢ = view(rcK, 1:(n_cols-1), :)
-    Kⱼ = view(rcK, 2:n_cols, :)
-    dTᵢ .+= (1 / (ρ * (l^2) * cₚ)) .* ((Kᵢ .+ Kⱼ) ./ 2) .* (Tⱼ .- Tᵢ)
+    dTᵢ = view(rcdT, 1:(ncols-1), :, :)
+    Tᵢ = view(rcT, 1:(ncols-1), :, :)
+    Tⱼ = view(rcT, 2:ncols, :, :)
+    dTᵢ .+= (α / l^2) .* (Tⱼ .- Tᵢ)
 
-    dT .+= (h∞ / (ρ * l * cₚ)) .* (T∞ .- T) # Convection to environment
-
-    # Convection to environment out left edge
-    dTᵢ = view(rcdT, 1:1, :)
-    Tᵢ = view(rcT, 1:1, :)
+    # Convection to environemnt from top face
+    dTᵢ = view(rcdT, :, :, 1:1)
+    Tᵢ = view(rcT, :, :, 1:1)
     dTᵢ .+= (h∞ / (ρ * l * cₚ)) .* (T∞ .- Tᵢ)
 
-    # Convection to environment out right edge
-    dTᵢ = view(rcdT, n_cols:n_cols, :)
-    Tᵢ = view(rcT, n_cols:n_cols, :)
-    dTᵢ .+= (h∞ / (ρ * l * cₚ)) .* (T∞ .- Tᵢ)
+    # Conduction to environment from bottom face
+    dTᵢ = view(rcdT, :, :, ndeep:ndeep)
+    Tᵢ = view(rcT, :, :, ndeep:ndeep)
+    dTᵢ .+= (α / l^2) .* (T∞ .- Tᵢ)
 
-    # Convection to environment out top edge
-    dTᵢ = view(rcdT, :, 1:1)
-    Tᵢ = view(rcT, :, 1:1)
-    dTᵢ .+= (h∞ / (ρ * l * cₚ)) .* (T∞ .- Tᵢ)
+    # Conduction to environment out left edge
+    dTᵢ = view(rcdT, 1:1, :, :)
+    Tᵢ = view(rcT, 1:1, :, :)
+    dTᵢ .+= (α / l^2) .* (T∞ .- Tᵢ)
 
-    # Convection to environment out bottom edge
-    dTᵢ = view(rcdT, :, n_rows:n_rows)
-    Tᵢ = view(rcT, :, n_rows:n_rows)
-    dTᵢ .+= (h∞ / (ρ * l * cₚ)) .* (T∞ .- Tᵢ)
+    # Conduction to environment out right edge
+    dTᵢ = view(rcdT, ncols:ncols, :, :)
+    Tᵢ = view(rcT, ncols:ncols, :, :)
+    dTᵢ .+= (α / l^2) .* (T∞ .- Tᵢ)
+
+    # Conduction to environment out top edge
+    dTᵢ = view(rcdT, :, 1:1, :)
+    Tᵢ = view(rcT, :, 1:1, :)
+    dTᵢ .+= (α / l^2) .* (T∞ .- Tᵢ)
+
+    # Conduction to environment out bottom edge
+    dTᵢ = view(rcdT, :, nrows:nrows, :)
+    Tᵢ = view(rcT, :, nrows:nrows, :)
+    dTᵢ .+= (α / l^2) .* (T∞ .- Tᵢ)
 end
 
 function temperature!(td::PlanarVoxelTemperatureDynamics, T, s, zi)

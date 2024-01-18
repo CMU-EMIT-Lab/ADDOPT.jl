@@ -3,6 +3,7 @@ using LinearAlgebra
 struct PlanarHeatsourceDynamics <: InputDynamics
     nrows::Int
     ncols::Int
+    ndeep::Int
 
     l::Float64
     xₙ::Vector{Float64}
@@ -19,8 +20,8 @@ struct PlanarHeatsourceDynamics <: InputDynamics
     vₘₐₓ::Float64
     Plim::Vector{Float64}
 
-    function PlanarHeatsourceDynamics(nrows, ncols, l, xₙ, zₙ, Pₘₐₓ, Pₘᵢₙ, ρ, cₚ, σ, vₘₐₓ, Plim)
-        return new(nrows, ncols, l, xₙ, zₙ, Pₘₐₓ, Pₘᵢₙ, σ, ρ, cₚ, vₘₐₓ, Plim)
+    function PlanarHeatsourceDynamics(nrows, ncols, ndeep, l, xₙ, zₙ, Pₘₐₓ, Pₘᵢₙ, ρ, cₚ, σ, vₘₐₓ, Plim)
+        return new(nrows, ncols, ndeep, l, xₙ, zₙ, Pₘₐₓ, Pₘᵢₙ, σ, ρ, cₚ, vₘₐₓ, Plim)
     end
 end
 
@@ -50,9 +51,12 @@ function input_function!(id::PlanarHeatsourceDynamics, ds::AbstractVector{Ty}, r
     nvox = id.nrows * id.ncols
     P = view(u, 1:nvox)
     ρ, cₚ = id.ρ, id.cₚ
+    C = ρ * cₚ * l^3 
+    
+    top_dT = view(dT, 1:nvox)
 
     # Forced / input dynamics
-    @. dT += P / (ρ * l^3 * cₚ)
+    @. top_dT += P / C
 end
 
 function equality_constraint!(id::PlanarHeatsourceDynamics, c::AbstractVector{Ty}, r, u, t, zi) where {Ty}
