@@ -1,4 +1,3 @@
-include("ADDOPT.jl")
 using DataFrames
 using CSV: File, read
 using Plots
@@ -11,8 +10,7 @@ using Ipopt
 import HSL_jll
 
 # import MathOptInterface
-using .ADDOPT: animate_measurement_history, solve_RK4, combined_dynamics!, WAAMHardnessPrescribedTemp
-# const MOI = MathOptInterface
+using .animation_measured3d4_optimized# const MOI = MathOptInterface
 
 struct SysidProblem <: MOI.AbstractNLPEvaluator
     X::Vector{Vector{Float64}}

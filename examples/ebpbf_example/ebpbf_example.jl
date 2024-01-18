@@ -1,6 +1,5 @@
-include("ADDOPT.jl")
 using LinearAlgebra
-using .ADDOPT: AdditiveProblem, optimize_trajectory, animate_measurement_history, PlanarLPBF, marshall_z, QuadraticObjective, initial_guess, rollout, field_to_spots, resample_vector_traj
+using ADDOPT
 using Plots
 using JLD2
 using CSV, Tables

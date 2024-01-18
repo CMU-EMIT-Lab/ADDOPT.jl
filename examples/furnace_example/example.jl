@@ -1,7 +1,6 @@
-include("ADDOPT.jl")
 using LinearAlgebra
-using .ADDOPT: Furnace, AdditiveProblem, QuadraticObjective, optimize_trajectory, marshall_z
-@time using Plots
+using ADDOPT
+using Plots
 
 Pₘₐₓ = 20000.0  # W
 T∞ = 293.15    # K

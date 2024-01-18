@@ -1,6 +1,5 @@
-include("ADDOPT.jl")
 using LinearAlgebra
-using .ADDOPT: AdditiveProblem, QuadraticObjective, TimeWeightedQuadraticObjective, optimize_trajectory, generate_wall_z₀, temperature!, WAAMPrescribedMotion, WAAMHardnessPrescribedMotion, animate_3Dmeasurement_history_planar, animate_3Dstate_history_planar, gen_knots, gen_fill_ref, gen_xyz, rollout, marshall_z, ThermalICProblem, optimize_thermal_ic, resample_vector_traj, WAAMHardnessCooling, constraints!, thermal_ic_to_property_final, gen_torch_ref, traj_to_lines, lines_to_rapid
+using ADDOPT
 using Statistics
 using Plots
 using JLD2

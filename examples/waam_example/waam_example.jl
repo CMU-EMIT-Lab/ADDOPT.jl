@@ -1,6 +1,5 @@
-include("ADDOPT.jl")
 using LinearAlgebra
-using .ADDOPT: AdditiveProblem, QuadraticObjective, optimize_trajectory, generate_wall_z₀, animate_state_history, input_idle, animate_measurement_history, state_min, property_min, temperature!, WAAMPrescribedMotion, VoxelEnergyFillDynamics, animate_3Dmeasurement_history_planar, animate_3Dstate_history_planar
+using ADDOPT
 using Plots
 using JLD2
 

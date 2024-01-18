@@ -1,7 +1,5 @@
 using Interpolations
 using LinearAlgebra
-using NLsolve
-using SpecialFunctions
 using ForwardDiff
 
 function gen_knots(points, Nkb)

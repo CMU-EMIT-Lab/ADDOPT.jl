@@ -1,12 +1,24 @@
 module ADDOPT
 
-@time using PrettyTables
-@time using MathOptInterface, Ipopt
-@time using LinearAlgebra, ForwardDiff
-@time using Symbolics, SparseArrays, SparseDiffTools
-@time using SparseArrays: findnz, nnz, nonzeros
+using PrettyTables
+using MathOptInterface, Ipopt
+using LinearAlgebra, ForwardDiff
+using Symbolics, SparseArrays, SparseDiffTools
+using SparseArrays: findnz, nnz, nonzeros
 const MOI = MathOptInterface
 import HSL_jll
+
+export AdditiveProblem, optimize_trajectory
+export Furnace, FurnaceSimple
+export PlanarLPBF, PlanarLPBFPrescribedMotion
+export WAAMPrescribedMotion, WAAMHardnessPrescribedMotion, WAAMHardnessPrescribedTemp
+export QuadraticObjective, TimeWeightedQuadraticObjective
+export temperature!, combined_dynamics!
+export marshall_z, initial_guess, resample_vector_traj, rollout, solve_RK4
+export gen_knots, gen_fill_ref, gen_xyz, gen_torch_ref, generate_wall_z₀
+export traj_to_lines, lines_to_rapid
+export animate_measurement_history, animate_state_history, animate_3Dmeasurement_history_planar, animate_3Dstate_history_planar
+export field_to_spots
 
 abstract type Dynamics end
 
@@ -47,7 +59,6 @@ include("rollout.jl")
 include("initial_guess.jl")
 include("visualization.jl")
 include("slicer.jl")
-include("goal_optimizer.jl")
 include("transpiler.jl")
 include("approximator.jl")
 

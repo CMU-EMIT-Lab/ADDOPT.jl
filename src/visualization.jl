@@ -1,5 +1,5 @@
-@time using Plots
-@time using ProgressMeter
+using Plots
+using ProgressMeter
 
 function animate_state_history(X, dt, n_rows, n_cols; path="animation_state.mp4", strid=1, width=1000, height=1000)
     N = n_rows * n_cols
