@@ -48,8 +48,7 @@ function solve_RK4(f!, x₀, U, dt, Nk, t₀, zi)
 
     # try
     t = t₀
-    p = Progress(Nk - 1)
-    # @showprogress 0.5 "Simulating..." 
+    p = Progress(Nk - 1; desc="Simulating... ")
     for i in 1:(Nk-1)
         Xi = X[i]
         Ui = U[i]
@@ -70,11 +69,6 @@ function solve_RK4(f!, x₀, U, dt, Nk, t₀, zi)
         next!(p)
         t += dt
     end
-    # catch e
-    #     println(showerror, e, catch_backtrace())
-    # finally
-    #     return X
-    # end
 
     return X
 end
@@ -138,7 +132,7 @@ function resample_vector_traj(t, traj, t_new)
     ret = []
 
     for i in 1:nx
-        interp = linear_interpolation(t, [v[i] for v in traj], extrapolation_bc=Flat())
+        interp = linear_interpolation(t, [v[i] for v in traj], extrapolation_bc=0)
         push!(ret, interp.(t_new))
     end
 

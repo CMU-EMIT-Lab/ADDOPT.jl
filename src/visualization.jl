@@ -4,7 +4,7 @@
 function animate_state_history(X, dt, n_rows, n_cols; path="animation_state.mp4", strid=1, width=1000, height=1000)
     N = n_rows * n_cols
 
-    p = Progress(length(X) ÷ strid)
+    p = Progress(length(X) ÷ strid; desc="Animating... ")
     anim = @animate for k in 1:strid:length(X)
         Ek = view(X[k], 1:N)
         mk = view(X[k], (N+1):2N)
@@ -29,7 +29,7 @@ end
 function animate_measurement_history(Y, dt, n_rows, n_cols; path="animation_measured.mp4", strid=1, width=1000, height=400, quantity="Temperature (K)", scale=(300, 1600))
     N = n_rows * n_cols
 
-    p = Progress(length(Y) ÷ strid)
+    p = Progress(length(Y) ÷ strid; desc="Animating... ")
     anim = @animate for k in 1:strid:length(Y)
         Tk = Y[k]
         T_arr = reshape(Tk, (n_cols, n_rows))'
@@ -46,7 +46,7 @@ end
 function animate_3Dmeasurement_history_planar(Y, X, dt, nx, ny, nz; path="animation_measured3d.mp4", strid=1, width=1000, height=400, quantity="Temperature (K)", scale=(300, 1800), l=1)
     N = nx * ny * nz
 
-    p = Progress(length(Y) ÷ strid)
+    p = Progress(length(Y) ÷ strid; desc="Animating... ")
     anim = @animate for k in 1:strid:length(Y)
         Tk = Y[k]
         xk = X[k]
@@ -68,7 +68,7 @@ end
 function animate_3Dstate_history_planar(X, dt, nx, ny, nz; path="animation_state3d.mp4", strid=1, width=1000, height=1000, l=1)
     N = nx * ny * nz
 
-    p = Progress(length(X) ÷ strid)
+    p = Progress(length(X) ÷ strid; desc="Animating... ")
     anim = @animate for k in 1:strid:length(X)
         Ek = view(X[k], 1:N)
         xk = view(X[k], (N+1):2N)

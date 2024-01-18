@@ -1,5 +1,6 @@
 using Statistics
 using StatsBase
+using ProgressMeter
 
 function field_to_spots(ts, U_ref, Δt, P, v, px, pz, σ, l; method=:random)
     tf = ts[end]
@@ -13,7 +14,7 @@ function field_to_spots(ts, U_ref, Δt, P, v, px, pz, σ, l; method=:random)
     pc, pn = l*ones(2), l*ones(2)
     oldidx = 1
 
-    p = Progress(Int(round(tf * 1e6)); dt=0.25)
+    p = Progress(Int(round(tf * 1e6)); dt=0.25, desc="Computing power field approximation... ")
     while t < tf
         while t > ts[k]
             k += 1
@@ -25,7 +26,7 @@ function field_to_spots(ts, U_ref, Δt, P, v, px, pz, σ, l; method=:random)
                 idx = random_selection(U_ref[k])
             end
         elseif method == :greedy
-            idx = greedy_selection(pc, U_ref[k], Δt, px, pz, l, σ, v, P, U, Dt, Uin, Dtin)
+            idx = greedy_selection(pc, U_ref[k], Δt, px, pz, l, σ, v, P, U, Dt, Uin, Dtin, oldidx)
         end
         pn .= [px[idx]; pz[idx]]
 
@@ -46,7 +47,7 @@ function random_selection(U_ref)
     return sample(Weights(U_ref / sum(U_ref)))
 end
 
-function greedy_selection(pc, U_ref, Δt, px, pz, l, σ, v, P, U, Dt, Uin, Dtin)
+function greedy_selection(pc, U_ref, Δt, px, pz, l, σ, v, P, U, Dt, Uin, Dtin, oldidx)
     nvox = length(px)
     Ū = zeros(nvox)
     Û = zeros(nvox)
@@ -83,6 +84,7 @@ function greedy_selection(pc, U_ref, Δt, px, pz, l, σ, v, P, U, Dt, Uin, Dtin)
 
         err[i] = sum(Ū)
     end
+    err[oldidx] = Inf
 
     return argmin(err)
 end
