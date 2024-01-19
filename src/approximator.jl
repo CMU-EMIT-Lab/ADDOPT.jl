@@ -18,6 +18,8 @@ function field_to_spots(ts, U_ref, Δt, P, v, px, pz, σ, l; method=:random, nf=
     Uth = [deepcopy(Uin) for n in 1:Threads.nthreads()]
     Dtth = [deepcopy(Dtin) for n in 1:Threads.nthreads()]
 
+    ΣU = zeros(nvox)
+
     p = Progress(Int(round(tf * 1e6)); dt=0.25, desc="Computing power field approximation... ")
     while t < tf
         while t > ts[k]
@@ -31,6 +33,8 @@ function field_to_spots(ts, U_ref, Δt, P, v, px, pz, σ, l; method=:random, nf=
             end
         elseif method == :greedy
             idx = greedy_selection(pc, U_ref[k], Δt, px, pz, l, σ, v, P, U, Dt, Uin, Dtin, oldidx, Ūth, Uth, Dtth)
+        elseif method == :min
+            idx = min_sum_selection(px, pz, U, Dt, ΣU)
         end
         pn .= [px[idx]; pz[idx]]
 
@@ -42,6 +46,9 @@ function field_to_spots(ts, U_ref, Δt, P, v, px, pz, σ, l; method=:random, nf=
         push!(X, copy(pc))
         update!(p, Int(round(t * 1e6)))
         oldidx = idx
+        for (u, dt) in zip(Uin, Dtin)
+            @. ΣU += u * dt
+        end
     end
 
     return U, X, Dt
@@ -49,6 +56,10 @@ end
 
 function random_selection(U_ref)
     return sample(Weights(U_ref / sum(U_ref)))
+end
+
+function min_sum_selection(px, pz, U, Dt, ΣU)
+    return argmin(ΣU)
 end
 
 function greedy_selection(pc, U_ref, Δt, px, pz, l, σ, v, P, U, Dt, Uin, Dtin, oldidx, Ūth, Uth, Dtth)
