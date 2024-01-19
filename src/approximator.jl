@@ -2,17 +2,21 @@ using Statistics
 using StatsBase
 using ProgressMeter
 
-function field_to_spots(ts, U_ref, Δt, P, v, px, pz, σ, l; method=:random)
+function field_to_spots(ts, U_ref, Δt, P, v, px, pz, σ, l; method=:random, nf=30)
     tf = ts[end]
     nvox = length(px)
     U, X, Dt = [], [], []
-    nf = 30
     Uin = [zeros(nvox) for i in 1:(nf+1)]
     Dtin = zeros(nf + 1)
     k = 1
     t = 0.0
-    pc, pn = l*ones(2), l*ones(2)
+    pc, pn = l * ones(2), l * ones(2)
     oldidx = 1
+
+    # Multithreading caches
+    Ūth = [zeros(nvox) for n in 1:Threads.nthreads()]
+    Uth = [deepcopy(Uin) for n in 1:Threads.nthreads()]
+    Dtth = [deepcopy(Dtin) for n in 1:Threads.nthreads()]
 
     p = Progress(Int(round(tf * 1e6)); dt=0.25, desc="Computing power field approximation... ")
     while t < tf
@@ -26,7 +30,7 @@ function field_to_spots(ts, U_ref, Δt, P, v, px, pz, σ, l; method=:random)
                 idx = random_selection(U_ref[k])
             end
         elseif method == :greedy
-            idx = greedy_selection(pc, U_ref[k], Δt, px, pz, l, σ, v, P, U, Dt, Uin, Dtin, oldidx)
+            idx = greedy_selection(pc, U_ref[k], Δt, px, pz, l, σ, v, P, U, Dt, Uin, Dtin, oldidx, Ūth, Uth, Dtth)
         end
         pn .= [px[idx]; pz[idx]]
 
@@ -47,7 +51,7 @@ function random_selection(U_ref)
     return sample(Weights(U_ref / sum(U_ref)))
 end
 
-function greedy_selection(pc, U_ref, Δt, px, pz, l, σ, v, P, U, Dt, Uin, Dtin, oldidx)
+function greedy_selection(pc, U_ref, Δt, px, pz, l, σ, v, P, U, Dt, Uin, Dtin, oldidx, Ūth, Uth, Dtth)
     nvox = length(px)
     Ū = zeros(nvox)
     Û = zeros(nvox)
@@ -65,12 +69,19 @@ function greedy_selection(pc, U_ref, Δt, px, pz, l, σ, v, P, U, Dt, Uin, Dtin,
 
     candidates = findall(>(1e-4), U_ref)
 
-    for i in candidates
+    Threads.@threads :static for i in candidates
+        # Multithreading cache selection
+        thread = Threads.threadid()
+        Ū = Ūth[thread]
+        U = Uth[thread]
+        Dt = Dtth[thread]
+        
         Ū .= Û
         t̄ = t̂
 
         pn = [px[i]; pz[i]]
-        beam_to!(pc, pn, Δt, px, pz, l, σ, v, P, Uin, Dtin)
+        # beam_to!(pc, pn, Δt, px, pz, l, σ, v, P, Uin, Dtin)
+        beam_to!(pc, pn, Δt, px, pz, l, σ, v, P, U, Dt)
 
         for (u, dt) in zip(Uin, Dtin)
             Ū .+= u .* dt
@@ -89,25 +100,23 @@ function greedy_selection(pc, U_ref, Δt, px, pz, l, σ, v, P, U, Dt, Uin, Dtin,
     return argmin(err)
 end
 
-function beam_to!(p0, p1, Δt, px, pz, l, σ, v, P, U, Dt)
-    p = copy(p0)
-    dp = p1 .- p0
+function beam_to!(p0, p1, Δt, px, pz, l, σ::Float64, v, P, U, Dt)
     nf = length(Dt) - 1
+    dp = (p1 .- p0) / nf
+    ps = [p0 .+ dp * i for i in 1:nf]
 
-    Δtf = norm(dp) / v / nf
+    Δtf = norm(dp) / v
     Dt[1:(end-1)] .= Δtf
     Dt[end] = Δt
 
-    for i in 1:nf
-        map!((px, pz) -> power_at_loc(px, pz, p[1], p[2], σ), U[i], px, pz)
+    @fastmath @inbounds for (i, pt) in enumerate(ps)
+        map!((px, pz) -> power_at_loc(px, pz, pt[1], pt[2], σ), U[i], px, pz)
         U[i] .*= (l^2 / (2π * σ^2)) * P
-        @. p += dp / nf
     end
-    map!((px, pz) -> power_at_loc(px, pz, p[1], p[2], σ), U[end], px, pz)
+    map!((px, pz) -> power_at_loc(px, pz, p1[1], p1[2], σ), U[end], px, pz)
     U[end] .*= (l^2 / (2π * σ^2)) * P
-
 end
 
-function power_at_loc(px, pz, x, z, σ)::Float64
+@inline function power_at_loc(px::Float64, pz::Float64, x::Float64, z::Float64, σ::Float64)::Float64
     return exp(-((px - x)^2 + (pz - z)^2) / (2σ^2))
 end
