@@ -50,6 +50,7 @@ function field_to_spots(ts, U_ref, Δt, P, v, px, pz, σ, l; method=:random, nf=
             @. ΣU += u * dt
         end
     end
+    update!(p, Int(round(tf * 1e6)))
 
     return U, X, Dt
 end
@@ -68,7 +69,7 @@ function greedy_selection(pc, U_ref, Δt, px, pz, l, σ, v, P, U, Dt, Uin, Dtin,
     Û = zeros(nvox)
     err = zeros(nvox)
     err .= Inf
-    t_window = nvox / 3 * 1e-6
+    t_window = nvox * 2 * 1e-6
 
     t̂ = 0.0
     j = 0
@@ -80,20 +81,22 @@ function greedy_selection(pc, U_ref, Δt, px, pz, l, σ, v, P, U, Dt, Uin, Dtin,
 
     candidates = findall(>(1e-4), U_ref)
 
-    Threads.@threads :static for i in candidates
-        # Multithreading cache selection
-        thread = Threads.threadid()
-        Ū = Ūth[thread]
-        U = Uth[thread]
-        Dt = Dtth[thread]
+    # Threads.@threads :static 
+    for i in candidates
+        # # Multithreading cache selection
+        # thread = Threads.threadid()
+        # Ū = Ūth[thread]
+        # U = Uth[thread]
+        # Dt = Dtth[thread]
         
         Ū .= Û
         t̄ = t̂
 
         pn = [px[i]; pz[i]]
-        # beam_to!(pc, pn, Δt, px, pz, l, σ, v, P, Uin, Dtin)
-        beam_to!(pc, pn, Δt, px, pz, l, σ, v, P, U, Dt)
+        beam_to!(pc, pn, Δt, px, pz, l, σ, v, P, Uin, Dtin)
+        # beam_to!(pc, pn, Δt, px, pz, l, σ, v, P, U, Dt)
 
+        # for (u, dt) in zip(U, Dt)
         for (u, dt) in zip(Uin, Dtin)
             Ū .+= u .* dt
             t̄ += dt

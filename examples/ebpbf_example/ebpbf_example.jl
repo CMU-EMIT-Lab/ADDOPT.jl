@@ -7,14 +7,14 @@ using StatsFuns
 using Statistics
 using Images
 
-run_num = 26
+run_num = 28 # 27 400um 4km/s, 28 400um 1km/s
 mask_img = Bool.(Gray.(load("trial.png")))
 mask = vec(mask_img)
 nₕ = sum(mask)
 
 # Machine parameters
-σ = 250e-6 / 2.355 # Spot diameter, m
-vₘₐₓ = 4e3 # m/s
+σ = 400e-6 / 2.355 # Spot diameter, m #250e-6
+vₘₐₓ = 1e3 # m/s
 Pₛₑₜ = 3000.0e-3 # kW
 
 # Material parameters, taken at the solidus
@@ -33,8 +33,8 @@ ndeep = 3
 nsvox = nrows * ncols
 nvox = nsvox * ndeep
 mask = vcat(mask, zeros(Bool, nsvox * (ndeep - 1)))
-l = 200e-6 # m 
-
+l = 320e-6 # m #200
+@show nsvox
 # Environment parameters
 T∞ = (20.0 + 273.15) * 1e-3 # kK
 h∞ = 0.0 # W / m^2 K (Vacuum)
@@ -54,45 +54,45 @@ R = zeros(nsvox, nsvox)
 Qf = Q
 objective = QuadraticObjective(Q, R, Qf, x̄, ū)
 
-Nkc = 10
+Nkc = 20
 Nc = 1
-Δtb = 200e-6 # s, aka 200μs 
-Δtc = 200e-6 # s, aka 200μs
+Δtb = 500e-6 # s, aka 500μs 
+Δtc = 500e-6 # s, aka 500μs
 
 T_melt = Tₗ + 0.0e-3
 u0 = mask[1:nsvox] ./ sum(mask) * process.input_dynamics.Pₘₐₓ
-Nkb, U0, X0 = initial_guess(process, mask, x₀, Nkc, Δtb, Δtc, T_melt, u0)
+Nkb, U0, X0 = initial_guess(process, mask, x₀, Nkc, Δtb, Δtc, T_melt + 200e-3, u0) #increase superheat requirement
 @show Nkb
 
-problem = AdditiveProblem(process, objective, Nkb, Nkc, Nc, x₀, xfmin=(T_melt + 50e-3) * mask, x̄=Tmax, Δtb=Δtb, Δtc=Δtc, final_constraint=true, hessian=true)
+surface_scaled(X) = [x[1:nsvox] .* 1e3 for x in X]
+animate_measurement_history(surface_scaled(X0[1]), Δtb * 1e3, nrows, ncols, strid=1, path="animation_uniform_ideal_temperature_ebpbf_$run_num.mp4", scale=(700, 2100), width=500)
+animate_measurement_history(surface_scaled(U0[1]), Δtb * 1e3, nrows, ncols, strid=1, path="animation_uniform_ideal_power_ebpbf_$run_num.mp4", quantity="Power W", scale=(0, round(2Pₛₑₜ / nₕ * 1e3)), width=500)
+
+boxconstraints = [(1, Nkb, (T_melt + 50e-3) * mask, Tmax),]
+problem = AdditiveProblem(process, objective, Nkb, Nkc, Nc, x₀, xfmin=(T_melt + 50e-3) * mask, x̄=Tmax, Δtb=Δtb, Δtc=Δtc, final_constraint=false, hessian=true, boxconstraints=boxconstraints)
 z0 = marshall_z(problem.idx, X0, U0, Δtb, Δtc)
 
 z, X, U, Δt, λ = optimize_trajectory(problem; max_iter=10_000, z₀=z0, solv="ma97", isqp=true)
 save_object("traj_lpbf_ebpbf_$(run_num)_opt.jld2", z)
 GC.gc()
 
-# z = load_object("temp/e-beam field optimization/traj_lpbf_ebpbf_25.jld2")
-# X = vcat([[z[problem.idx.x[c][k]] for k in 1:Nkb] for c in 1:Nc]...)
+# z = load_object("traj_lpbf_ebpbf_$(run_num)_opt.jld2")
+X = vcat([[z[problem.idx.x[c][k]] for k in 1:(Nkb+Nkc)] for c in 1:Nc]...)
 # U = vcat([[z[problem.idx.u[c][k]] for k in 1:Nkb] for c in 1:Nc]...)
 
 t = (cumsum(Δt) .- Δt[1]) .* 1e3
 xₙ = process.input_dynamics.xₙ
 zₙ = process.input_dynamics.zₙ
 
-surface_scaled(X) = [x[1:nsvox] .* 1e3 for x in X]
-
-animate_measurement_history(surface_scaled(X0[1]), Δtb * 1e3, nrows, ncols, strid=1, path="animation_uniform_ideal_temperature_ebpbf_$run_num.mp4", scale=(1000, Tboil * 1e3), width=500)
-animate_measurement_history(surface_scaled(U0[1]), Δtb * 1e3, nrows, ncols, strid=1, path="animation_uniform_ideal_power_ebpbf_$run_num.mp4", quantity="Power W", scale=(0, round(2Pₛₑₜ / nₕ * 1e3)), width=500)
-
-animate_measurement_history(surface_scaled(X), Δtb * 1e3, nrows, ncols, strid=1, path="animation_optimized_ideal_temperature_ebpbf_$run_num.mp4", scale=(1000, Tboil * 1e3), width=500)
+animate_measurement_history(surface_scaled(X), Δtb * 1e3, nrows, ncols, strid=1, path="animation_optimized_ideal_temperature_ebpbf_$run_num.mp4", scale=(700, 2100), width=500)
 animate_measurement_history(surface_scaled(U), Δtb * 1e3, nrows, ncols, strid=1, path="animation_optimized_ideal_power_ebpbf_$run_num.mp4", quantity="Power W", scale=(0, round(2Pₛₑₜ / nₕ * 1e3)), width=500)
 
 U0c = U0[1]
 Uo = U[1:Nkb]
 Δtm = 1e-6
-function approximate_and_animate(U, stri; method=:random)
+function approximate_and_animate(U, stri; method=:random, Δtm = 1e-6)
     simsub = 20
-    Δtsim = Δtm / simsub
+    Δtsim = 1e-6 / simsub
     UP, xtzt, Dt = field_to_spots(t[1:Nkb] ./ 1e3, U, Δtm, Pₛₑₜ, vₘₐₓ, xₙ, zₙ, σ, l; method=method)
     Ncool = Nkc * Int(round(Δtb / Δtm))
     append!(Dt, Δtm * ones(Ncool))
@@ -102,7 +102,7 @@ function approximate_and_animate(U, stri; method=:random)
     UPsim = resample_vector_traj(tm, UP, t_sim)
     XPsim = rollout(process, x₀, UPsim, length(UPsim), Δtsim)
 
-    animate_measurement_history(surface_scaled(XPsim), Δtsim * 1e3, nrows, ncols, strid=simsub * 10, path="animation_$(stri)_$(string(method))_temperature_ebpbf_$run_num.mp4", scale=(1000, Tboil * 1e3), width=500)
+    animate_measurement_history(surface_scaled(XPsim), Δtsim * 1e3, nrows, ncols, strid=simsub * 10, path="animation_$(stri)_$(string(method))_temperature_ebpbf_$run_num.mp4", scale=(700, 2100), width=500)
     animate_measurement_history(surface_scaled(UPsim), Δtsim * 1e3, nrows, ncols, strid=simsub * 10, path="animation_$(stri)_$(string(method))_power_ebpbf_$run_num.mp4", quantity="Power W", scale=(0, Pₛₑₜ * 1e3), width=500)
 
     return t_sim, UPsim, XPsim, xtzt
@@ -114,6 +114,9 @@ t_sim_ur, Usim_ur, Xsim_ur, points_ur = approximate_and_animate(U0c, "uniform"; 
 t_sim_ug, Usim_ug, Xsim_ug, points_ug = approximate_and_animate(U0c, "uniform"; method=:greedy)
 t_sim_or, Usim_or, Xsim_or, points_or = approximate_and_animate(Uo, "optimized"; method=:random)
 t_sim_og, Usim_og, Xsim_og, points_og = approximate_and_animate(Uo, "optimized"; method=:greedy)
+
+Δtsm = 30e-6
+t_sim_sm, Usim_sm, Xsim_sm, points_sm = approximate_and_animate(U0c, "spotmelt"; method=:random, Δtm=Δtsm)
 
 T = [x[1:nvox] for x in X]
 Tm = [mean(temp[mask] * 1e3) for temp in T]
@@ -130,8 +133,10 @@ plot!(var_comp, t_sim_ug[1:2000:end] .* 1e3, [std(t[mask] .* 1e3) for t in Xsim_
 plot!(var_comp, t, Tσ, linewidth=3, thickness_scaling=1, label="Optimized Power, Ideal", c="indianred")
 plot!(var_comp, t_sim_or[1:2000:end] .* 1e3, [std(t[mask] .* 1e3) for t in Xsim_or][1:2000:end], linewidth=3, thickness_scaling=1, label="Optimized Power, Random Approximation", c="red", linestyle=:dot)
 plot!(var_comp, t_sim_og[1:2000:end] .* 1e3, [std(t[mask] .* 1e3) for t in Xsim_og][1:2000:end], linewidth=3, thickness_scaling=1, label="Optimized Power, Greedy Approximation", c="darkred", linestyle=:dashdot)
+plot!(var_comp, t_sim_sm[1:2000:end] .* 1e3, [std(t[mask] .* 1e3) for t in Xsim_sm][1:2000:end], linewidth=3, thickness_scaling=1, label="Random Spot Melting", c="purple", linestyle=:dashdot)
+
 # savefig(var_comp, "var_comp.svg")
-savefig(var_comp, "var_comp.png")
+savefig(var_comp, "var_comp_$(run_num).png")
 
 var_comp_int = plot(xlabel="Time (ms)", ylabel="Integral of Temperature Variance [K²s]", tickfontsize=14, labelfontsize=16, legendfontsize=14, size=(800, 800), widen=true, handlelength=8)
 plot!(var_comp_int, t, cumsum(T0σ .^ 2 .* Δt), linewidth=3, thickness_scaling=1, label="Uniform Power, Ideal", c="lightblue")
@@ -140,21 +145,22 @@ plot!(var_comp_int, t_sim_ug[1:2000:end] .* 1e3, cumsum([var(t[mask] .* 1e3) for
 plot!(var_comp_int, t, cumsum(Tσ .^ 2 .* Δt), linewidth=3, thickness_scaling=1, label="Optimized Power, Ideal", c="indianred")
 plot!(var_comp_int, t_sim_or[1:2000:end] .* 1e3, cumsum([var(t[mask] .* 1e3) for t in Xsim_or] .* Δtm / 20)[1:2000:end], linewidth=3, thickness_scaling=1, label="Optimized Power, Random Approximation", c="red", linestyle=:dot)
 plot!(var_comp_int, t_sim_og[1:2000:end] .* 1e3, cumsum([var(t[mask] .* 1e3) for t in Xsim_og] .* Δtm / 20)[1:2000:end], linewidth=3, thickness_scaling=1, label="Optimized Power, Greedy Approximation", c="darkred", linestyle=:dashdot)
+plot!(var_comp_int, t_sim_sm[1:2000:end] .* 1e3, cumsum([var(t[mask] .* 1e3) for t in Xsim_sm] .* Δtm / 20)[1:2000:end], linewidth=3, thickness_scaling=1, label="Random Spot Melting", c="purple", linestyle=:dashdot)
 # savefig(var_comp_int, "var_comp_int.svg")
-savefig(var_comp_int, "var_comp_int.png")
+savefig(var_comp_int, "var_comp_int_$(run_num).png")
 
 function comp_plot(n_div, X0, X, quantity, scale, title)
     plot_init = []
     for d in 1:n_div
         idx = (Nkb * d) ÷ n_div
-        x = reshape(X0[idx], (nrows, ncols))'
+        x = reshape(X0[idx], (ncols, nrows))'
         h = heatmap(x, aspect_ratio=:equal, colorbar=:none, framestyle=:none, clim=scale, size=(500, 500), title="t = $(round(t[idx], digits=1)) ms", titlefontsize=20)
         push!(plot_init, h)
     end
     plot_opt = []
     for d in 1:n_div
         idx = (Nkb * d) ÷ n_div
-        x = reshape(X[idx], (nrows, ncols))'
+        x = reshape(X[idx], (ncols, nrows))'
         h = heatmap(x, aspect_ratio=:equal, colorbar=:none, framestyle=:none, clim=scale, size=(500, 500))
         push!(plot_opt, h)
     end
@@ -171,15 +177,53 @@ function comp_plot(n_div, X0, X, quantity, scale, title)
     return comp
 end
 
-temp_comp = comp_plot(3, surface_scaled(T0), surface_scaled(T), "Temperature (K)", (1000, 3000), "Temperature Evolution")
-savefig(temp_comp, "temp_comp.svg")
-savefig(temp_comp, "temp_comp.png")
+temp_comp = comp_plot(3, surface_scaled(T0), surface_scaled(T), "Temperature (K)", (700, 2100), "Temperature Evolution")
+savefig(temp_comp, "temp_comp_$(run_num).svg")
+savefig(temp_comp, "temp_comp_$(run_num).png")
 
 power_comp = comp_plot(3, surface_scaled(U0[1]), surface_scaled(U), "Power (W)", (0, round(Pₛₑₜ .* 1e3 / nₕ * 2)), "Power Evolution")
-savefig(power_comp, "power_comp.svg")
-savefig(power_comp, "power_comp.png")
+savefig(power_comp, "power_comp_$(run_num).svg")
+savefig(power_comp, "power_comp_$(run_num).png")
 
-CSV.write("scan_strat_$(run_num)_uniform_random.csv", Tables.table(vcat([[x[1]; x[2]; Δtm]' for x in points_ur]...); header=["X", "Y", "Δt"]))
-CSV.write("scan_strat_$(run_num)_uniform_greedy.csv", Tables.table(vcat([[x[1]; x[2]; Δtm]' for x in points_ug]...); header=["X", "Y", "Δt"]))
-CSV.write("scan_strat_$(run_num)_optimized_random.csv", Tables.table(vcat([[x[1]; x[2]; Δtm]' for x in points_or]...); header=["X", "Y", "Δt"]))
-CSV.write("scan_strat_$(run_num)_optimized_greedy.csv", Tables.table(vcat([[x[1]; x[2]; Δtm]' for x in points_og]...); header=["X", "Y", "Δt"]))
+p0 = [0; 0]
+dt_ur = norm.(points_ur .- vcat([p0], points_ur[1:(end-1)])) ./ vₘₐₓ .+ Δtm
+dt_ug = norm.(points_ug .- vcat([p0], points_ug[1:(end-1)])) ./ vₘₐₓ .+ Δtm
+dt_or = norm.(points_or .- vcat([p0], points_or[1:(end-1)])) ./ vₘₐₓ .+ Δtm
+dt_og = norm.(points_og .- vcat([p0], points_og[1:(end-1)])) ./ vₘₐₓ .+ Δtm
+
+dt_sm = norm.(points_sm .- vcat([p0], points_sm[1:(end-1)])) ./ vₘₐₓ .+ Δtsm
+
+CSV.write("scan_strat_$(run_num)_uniform_random.csv", Tables.table(vcat([[round(x[1], digits=9); round(x[2], digits=9); round(Δt, digits=9)]' for (x, Δt) in zip(points_ur, dt_ur)]...); header=["X", "Y", "Δt"]))
+CSV.write("scan_strat_$(run_num)_uniform_greedy.csv", Tables.table(vcat([[round(x[1], digits=9); round(x[2], digits=9); round(Δt, digits=9)]' for (x, Δt) in zip(points_ug, dt_ug)]...); header=["X", "Y", "Δt"]))
+CSV.write("scan_strat_$(run_num)_optimized_random.csv", Tables.table(vcat([[round(x[1], digits=9); round(x[2], digits=9); round(Δt, digits=9)]' for (x, Δt) in zip(points_or, dt_or)]...); header=["X", "Y", "Δt"]))
+CSV.write("scan_strat_$(run_num)_optimized_greedy.csv", Tables.table(vcat([[round(x[1], digits=9); round(x[2], digits=9); round(Δt, digits=9)]' for (x, Δt) in zip(points_og, dt_og)]...); header=["X", "Y", "Δt"]))
+
+CSV.write("scan_strat_$(run_num)_spotmelt_random.csv", Tables.table(vcat([[round(x[1], digits=9); round(x[2], digits=9); round(Δt, digits=9)]' for (x, Δt) in zip(points_sm, dt_sm)]...); header=["X", "Y", "Δt"]))
+
+function max_in_arr(vec_of_vecs)
+    ret = zeros(eltype(vec_of_vecs[1]), size(vec_of_vecs[1]))
+    
+    for vec in vec_of_vecs
+        ret .= max.(ret, vec)
+    end
+
+    return ret
+end
+
+maxT_ur = max_in_arr(Xsim_ur)
+maxT_ug = max_in_arr(Xsim_ug)
+maxT_or = max_in_arr(Xsim_or)
+maxT_og = max_in_arr(Xsim_og)
+maxT_sm = max_in_arr(Xsim_sm)
+
+hm_ur = heatmap(reshape(maxT_ur[1:nsvox], (ncols, nrows))' .≥ T_melt, aspect_ratio=:equal, colorbar=:none, size=(700, 700))
+savefig(hm_ur, "melt_ur.png")
+hm_ug = heatmap(reshape(maxT_ug[1:nsvox], (ncols, nrows))' .≥ T_melt, aspect_ratio=:equal, colorbar=:none, size=(700, 700))
+savefig(hm_ug, "melt_ug.png")
+hm_or = heatmap(reshape(maxT_or[1:nsvox], (ncols, nrows))' .≥ T_melt, aspect_ratio=:equal, colorbar=:none, size=(700, 700))
+savefig(hm_or, "melt_or.png")
+hm_og = heatmap(reshape(maxT_og[1:nsvox], (ncols, nrows))' .≥ T_melt, aspect_ratio=:equal, colorbar=:none, size=(700, 700))
+savefig(hm_og, "melt_og.png")
+hm_sm = heatmap(reshape(maxT_sm[1:nsvox], (ncols, nrows))' .≥ T_melt, aspect_ratio=:equal, colorbar=:none, size=(700, 700))
+savefig(hm_sm, "melt_sm.png")
+GC.gc()

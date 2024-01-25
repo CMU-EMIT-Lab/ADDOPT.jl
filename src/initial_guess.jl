@@ -148,12 +148,14 @@ function initial_guess(process::Process{PlanarHeatsourceDynamics, PlanarVoxelTem
 
     f!(dx, x, u, t, zi) = combined_dynamics!(dx, x, u, process, t, zi, Δtb)
 
-    while minimum(x[mask]) ≤ T_melt
+    while mean(x[mask]) ≤ T_melt
         Nkb += 1
 
         push!(X0, x)
         push!(U0, u)
         x = step_RK4(f!, x, u, Δtb, 0.0, 1)
+        println(mean(x[mask]))
+        flush(stdout)
     end
     
     push!(X0, step_RK4(f!, X0[end], U0[end], Δtc, 0.0, 1))

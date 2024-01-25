@@ -128,8 +128,11 @@ struct AdditiveProblem{OB<:Objective,ID<:InputDynamics,TD<:TransferDynamics,PD<:
     Δtc_min::Float64
     Δtc_max::Float64
 
+    boxconstraints::Vector{Tuple{Int,Int,Vector{Float64},Vector{Float64}}}
+
     function AdditiveProblem(process::Process{ID,TD,PD}, objective::OB,
         Nkb, Nkc, Nc, x₀; x̄=nothing, Δtb=nothing, Δtc=nothing, final_constraint=false, hessian=true, ximin=nothing, xfmin=nothing,
+        boxconstraints=nothing,
         Δtb_min=0.01,
         Δtb_max=0.04,
         Δtc_min=0.01,
@@ -169,13 +172,18 @@ struct AdditiveProblem{OB<:Objective,ID<:InputDynamics,TD<:TransferDynamics,PD<:
             xfmin = x̄
         end
 
+        if isnothing(boxconstraints)
+            boxconstraints = []
+        end
+
         new{OB,ID,TD,PD}(process, objective, Δtb, Δtc, con_jacobian_sparsity,
             idx, sparsity_cache,
             x₀, ximin, x̄, xfmin,
             final_constraint, hessian,
             cp,
             Δtb_min, Δtb_max,
-            Δtc_min, Δtc_max)
+            Δtc_min, Δtc_max,
+            boxconstraints)
     end
 end
 
@@ -982,6 +990,9 @@ function optimize_trajectory(problem::AdditiveProblem;
         property_max(pd)
         state_max(id)]
 
+    x_l = [Vector{Any}(undef, Nkb[c] + Nkc[c]) for c in 1:Nc]
+    x_u = [Vector{Any}(undef, Nkb[c] + Nkc[c]) for c in 1:Nc]
+
     # Set primal bounds and initial values
     for c in 1:Nc
         for k in 1:Nkb[c]
@@ -997,12 +1008,12 @@ function optimize_trajectory(problem::AdditiveProblem;
 
             xj = z[idx.x[c][k]]
             if c > 1 || k > 1
-                MOI.add_constraints(solver, xj, MOI.LessThan.(x_max))
-                MOI.add_constraints(solver, xj, MOI.GreaterThan.(x_min))
+                x_u[c][k] = MOI.add_constraints(solver, xj, MOI.LessThan.(x_max))
+                x_l[c][k] = MOI.add_constraints(solver, xj, MOI.GreaterThan.(x_min))
             else
                 # Initial state constraint
-                MOI.add_constraints(solver, xj, MOI.LessThan.(problem.x₀))
-                MOI.add_constraints(solver, xj, MOI.GreaterThan.(problem.ximin))
+                x_u[c][k] = MOI.add_constraints(solver, xj, MOI.LessThan.(problem.x₀))
+                x_l[c][k] = MOI.add_constraints(solver, xj, MOI.GreaterThan.(problem.ximin))
             end
         end
 
@@ -1021,15 +1032,24 @@ function optimize_trajectory(problem::AdditiveProblem;
 
             xj = z[idx.x[c][k]]
             if c < Nc || k < Nkb[c] + Nkc[c]
-                MOI.add_constraints(solver, xj, MOI.LessThan.(x_max))
-                MOI.add_constraints(solver, xj, MOI.GreaterThan.(x_min))
+                x_u[c][k] = MOI.add_constraints(solver, xj, MOI.LessThan.(x_max))
+                x_l[c][k] = MOI.add_constraints(solver, xj, MOI.GreaterThan.(x_min))
             else
                 # Final state constraint
-                MOI.add_constraints(solver, xj, MOI.LessThan.(problem.x̄))
-                MOI.add_constraints(solver, xj, MOI.GreaterThan.(problem.xfmin))
+                x_u[c][k] = MOI.add_constraints(solver, xj, MOI.LessThan.(problem.x̄))
+                x_l[c][k] = MOI.add_constraints(solver, xj, MOI.GreaterThan.(problem.xfmin))
             end
         end
+    end
 
+    for boxcon in problem.boxconstraints
+        c, k, x_min, x_max = boxcon
+        xj = z[idx.x[c][k]]
+
+        MOI.delete(solver, x_u[c][k])
+        MOI.delete(solver, x_l[c][k])
+        x_l[c][k] = MOI.add_constraints(solver, xj, MOI.LessThan.(x_max))
+        x_l[c][k] = MOI.add_constraints(solver, xj, MOI.GreaterThan.(x_min))
     end
 
     for i in 1:lastindex(z₀)
