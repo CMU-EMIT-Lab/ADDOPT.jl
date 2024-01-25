@@ -13,11 +13,6 @@ function field_to_spots(ts, U_ref, Δt, P, v, px, pz, σ, l; method=:random, nf=
     pc, pn = l * ones(2), l * ones(2)
     oldidx = 1
 
-    # Multithreading caches
-    Ūth = [zeros(nvox) for n in 1:Threads.nthreads()]
-    Uth = [deepcopy(Uin) for n in 1:Threads.nthreads()]
-    Dtth = [deepcopy(Dtin) for n in 1:Threads.nthreads()]
-
     ΣU = zeros(nvox)
 
     p = Progress(Int(round(tf * 1e6)); dt=0.25, desc="Computing power field approximation... ")
@@ -32,7 +27,7 @@ function field_to_spots(ts, U_ref, Δt, P, v, px, pz, σ, l; method=:random, nf=
                 idx = random_selection(U_ref[k])
             end
         elseif method == :greedy
-            idx = greedy_selection(pc, U_ref[k], Δt, px, pz, l, σ, v, P, U, Dt, Uin, Dtin, oldidx, Ūth, Uth, Dtth)
+            idx = greedy_selection(pc, U_ref[k], Δt, px, pz, l, σ, v, P, U, Dt, Uin, Dtin, oldidx)
         elseif method == :min
             idx = min_sum_selection(px, pz, U, Dt, ΣU)
         end
@@ -63,7 +58,7 @@ function min_sum_selection(px, pz, U, Dt, ΣU)
     return argmin(ΣU)
 end
 
-function greedy_selection(pc, U_ref, Δt, px, pz, l, σ, v, P, U, Dt, Uin, Dtin, oldidx, Ūth, Uth, Dtth)
+function greedy_selection(pc, U_ref, Δt, px, pz, l, σ, v, P, U, Dt, Uin, Dtin, oldidx)
     nvox = length(px)
     Ū = zeros(nvox)
     Û = zeros(nvox)
@@ -81,22 +76,13 @@ function greedy_selection(pc, U_ref, Δt, px, pz, l, σ, v, P, U, Dt, Uin, Dtin,
 
     candidates = findall(>(1e-4), U_ref)
 
-    # Threads.@threads :static 
-    for i in candidates
-        # # Multithreading cache selection
-        # thread = Threads.threadid()
-        # Ū = Ūth[thread]
-        # U = Uth[thread]
-        # Dt = Dtth[thread]
-        
+    for i in candidates        
         Ū .= Û
         t̄ = t̂
 
         pn = [px[i]; pz[i]]
         beam_to!(pc, pn, Δt, px, pz, l, σ, v, P, Uin, Dtin)
-        # beam_to!(pc, pn, Δt, px, pz, l, σ, v, P, U, Dt)
 
-        # for (u, dt) in zip(U, Dt)
         for (u, dt) in zip(Uin, Dtin)
             Ū .+= u .* dt
             t̄ += dt
