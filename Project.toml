@@ -25,6 +25,22 @@ StringEncodings = "69024149-9ee7-55f6-a4c4-859efe599b68"
 Symbolics = "0c5d862f-8b57-4792-8d23-62f2024744c7"
 
 [compat]
+ProgressMeter = "1"
+MathOptInterface = "1"
+JuMP = "1"
+Symbolics = "5"
+StatsBase = "0.34"
+Ipopt = "1"
+ForwardDiff = "0.10"
+Statistics = "1"
+Interpolations = "0.15"
+Plots = "1"
+DataFrames = "1"
+CSV = "0.10"
+StringEncodings = "0.3"
+SparseDiffTools = "2"
+StatsFuns = "1"
+PrettyTables = "2"
 julia = "1"
 
 [extras]
