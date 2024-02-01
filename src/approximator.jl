@@ -2,15 +2,18 @@ using Statistics
 using StatsBase
 using ProgressMeter
 
-function field_to_spots(ts, U_ref, Δt, P, v, px, pz, σ, l; method=:random, nf=30)
+p(t, p_i, p_f, ω) = p_f - (p_f - p_i) * exp(-ω * t)
+
+function field_to_spots(ts, U_ref, Δtₘᵢₙ, P, ω, px, pz, σ, l; method=:random, nf=30, arrival_threshold=0.05)
     tf = ts[end]
     nvox = length(px)
-    U, X, Dt = [], [], []
+    U, X, Dt, dt = [], [], [], []
     Uin = [zeros(nvox) for i in 1:(nf+1)]
     Dtin = zeros(nf + 1)
     k = 1
     t = 0.0
     pc, pn = l * ones(2), l * ones(2)
+    pₘᵢₙ = arrival_threshold * l
     oldidx = 1
 
     ΣU = zeros(nvox)
@@ -27,18 +30,20 @@ function field_to_spots(ts, U_ref, Δt, P, v, px, pz, σ, l; method=:random, nf=
                 idx = random_selection(U_ref[k])
             end
         elseif method == :greedy
-            idx = greedy_selection(pc, U_ref[k], Δt, px, pz, l, σ, v, P, U, Dt, Uin, Dtin, oldidx)
+            idx = greedy_selection(pc, U_ref[k], Δtₘᵢₙ, px, pz, pₘᵢₙ, l, σ, ω, P, U, Dt, Uin, Dtin, oldidx)
         elseif method == :min
             idx = min_sum_selection(px, pz, U, Dt, ΣU)
         end
         pn .= [px[idx]; pz[idx]]
 
-        beam_to!(pc, pn, Δt, px, pz, l, σ, v, P, Uin, Dtin)
-        pc .= pn
-        t += sum(Dtin)
+        dp = pn .- pc
+        Δt = ceil((-1 / ω) * log(pₘᵢₙ / norm(dp)) / Δtₘᵢₙ) * Δtₘᵢₙ
+        pc, Δt = beam_to!(pc, pn, Δt, px, pz, l, σ, ω, P, Uin, Dtin)
+        t += Δt
         append!(Dt, Dtin)
         append!(U, [copy(u) for u in Uin])
         push!(X, copy(pc))
+        push!(dt, Δt)
         update!(p, Int(round(t * 1e6)))
         oldidx = idx
         for (u, dt) in zip(Uin, Dtin)
@@ -47,7 +52,7 @@ function field_to_spots(ts, U_ref, Δt, P, v, px, pz, σ, l; method=:random, nf=
     end
     update!(p, Int(round(tf * 1e6)))
 
-    return U, X, Dt
+    return U, X, Dt, dt
 end
 
 function random_selection(U_ref)
@@ -58,7 +63,7 @@ function min_sum_selection(px, pz, U, Dt, ΣU)
     return argmin(ΣU)
 end
 
-function greedy_selection(pc, U_ref, Δt, px, pz, l, σ, v, P, U, Dt, Uin, Dtin, oldidx)
+function greedy_selection(pc, U_ref, Δtₘᵢₙ, px, pz, pₘᵢₙ, l, σ, ω, P, U, Dt, Uin, Dtin, oldidx)
     nvox = length(px)
     Ū = zeros(nvox)
     Û = zeros(nvox)
@@ -76,12 +81,14 @@ function greedy_selection(pc, U_ref, Δt, px, pz, l, σ, v, P, U, Dt, Uin, Dtin,
 
     candidates = findall(>(1e-4), U_ref)
 
-    for i in candidates        
+    for i in candidates
         Ū .= Û
         t̄ = t̂
 
         pn = [px[i]; pz[i]]
-        beam_to!(pc, pn, Δt, px, pz, l, σ, v, P, Uin, Dtin)
+        dp = pn .- pc
+        Δt = ceil((-1 / ω) * log(pₘᵢₙ / norm(dp)) / Δtₘᵢₙ) * Δtₘᵢₙ
+        beam_to!(pc, pn, Δt, px, pz, l, σ, ω, P, Uin, Dtin)
 
         for (u, dt) in zip(Uin, Dtin)
             Ū .+= u .* dt
@@ -100,14 +107,12 @@ function greedy_selection(pc, U_ref, Δt, px, pz, l, σ, v, P, U, Dt, Uin, Dtin,
     return argmin(err)
 end
 
-function beam_to!(p0, p1, Δt, px, pz, l, σ::Float64, v, P, U, Dt)
-    nf = length(Dt) - 1
-    dp = (p1 .- p0) / nf
-    ps = [p0 .+ dp * i for i in 1:nf]
+function beam_to!(p0, p1, Δt::Float64, px, pz, l, σ::Float64, ω, P, U, Dt)
+    nf = length(Dt)
 
-    Δtf = norm(dp) / v
-    Dt[1:(end-1)] .= Δtf
-    Dt[end] = Δt
+    Δtf = Δt / nf
+    Dt .= Δtf
+    ps = [p(i * Δtf, p0, p1, ω) for i in 0:(nf-1)]
 
     @fastmath @inbounds for (i, pt) in enumerate(ps)
         map!((px, pz) -> power_at_loc(px, pz, pt[1], pt[2], σ), U[i], px, pz)
@@ -115,8 +120,29 @@ function beam_to!(p0, p1, Δt, px, pz, l, σ::Float64, v, P, U, Dt)
     end
     map!((px, pz) -> power_at_loc(px, pz, p1[1], p1[2], σ), U[end], px, pz)
     U[end] .*= (l^2 / (2π * σ^2)) * P
+
+    return p(Δt, p0, p1, ω), Δt
 end
 
 @inline function power_at_loc(px::Float64, pz::Float64, x::Float64, z::Float64, σ::Float64)::Float64
     return exp(-((px - x)^2 + (pz - z)^2) / (2σ^2))
+end
+
+function spots_to_field(xtzt, dts, P, ω, px, pz, σ, l; nf = 30)
+    nvox = length(px)
+    U, Dt = [], []
+    Uin = [zeros(nvox) for _ in 1:(nf+1)]
+    Dtin = zeros(nf + 1)
+    pc = l * ones(2)
+
+    p = Progress(length(xtzt); dt=0.25, desc="Simulating spot sequence... ")
+    for (pn, dt) in zip(xtzt, dts)
+        pc, Δt = beam_to!(pc, pn, dt, px, pz, l, σ, ω, P, Uin, Dtin)
+
+        append!(Dt, Dtin)
+        append!(U, [copy(u) for u in Uin])
+        next!(p)
+    end
+
+    return U, Dt
 end
