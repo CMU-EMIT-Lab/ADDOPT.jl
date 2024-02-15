@@ -6,6 +6,7 @@ struct PlanarHeatsourceDynamics <: InputDynamics
     ndeep::Int
 
     l::Float64
+    lz::Float64
     xₙ::Vector{Float64}
     zₙ::Vector{Float64}
 
@@ -20,8 +21,8 @@ struct PlanarHeatsourceDynamics <: InputDynamics
     vₘₐₓ::Float64
     Plim::Vector{Float64}
 
-    function PlanarHeatsourceDynamics(nrows, ncols, ndeep, l, xₙ, zₙ, Pₘₐₓ, Pₘᵢₙ, ρ, cₚ, σ, vₘₐₓ, Plim)
-        return new(nrows, ncols, ndeep, l, xₙ, zₙ, Pₘₐₓ, Pₘᵢₙ, σ, ρ, cₚ, vₘₐₓ, Plim)
+    function PlanarHeatsourceDynamics(nrows, ncols, ndeep, l, lz, xₙ, zₙ, Pₘₐₓ, Pₘᵢₙ, ρ, cₚ, σ, vₘₐₓ, Plim)
+        return new(nrows, ncols, ndeep, l, lz, xₙ, zₙ, Pₘₐₓ, Pₘᵢₙ, σ, ρ, cₚ, vₘₐₓ, Plim)
     end
 end
 
@@ -47,11 +48,11 @@ end
 
 function input_function!(id::PlanarHeatsourceDynamics, ds::AbstractVector{Ty}, r, u, t, zi, Δt) where {Ty}
     dT = ds
-    l, xₙ, zₙ, σ = id.l, id.xₙ, id.zₙ, id.σ
+    l, lz, xₙ, zₙ, σ = id.l, id.lz, id.xₙ, id.zₙ, id.σ
     nvox = id.nrows * id.ncols
     P = view(u, 1:nvox)
     ρ, cₚ = id.ρ, id.cₚ
-    C = ρ * cₚ * l^3 
+    C = ρ * cₚ * l^2 * lz 
     
     top_dT = view(dT, 1:nvox)
 
@@ -64,7 +65,7 @@ function equality_constraint!(id::PlanarHeatsourceDynamics, c::AbstractVector{Ty
 end
 
 function inequality_constraint!(id::PlanarHeatsourceDynamics, c::AbstractVector{Ty}, r, u, t, zi) where {Ty}
-    l, xₙ, zₙ, σ = id.l, id.xₙ, id.zₙ, id.σ
+    # l, xₙ, zₙ, σ = id.l, id.xₙ, id.zₙ, id.σ
     nvox = id.nrows * id.ncols
     P = view(u, 1:nvox)
 

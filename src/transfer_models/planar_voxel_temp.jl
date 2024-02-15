@@ -4,6 +4,7 @@ struct PlanarVoxelTemperatureDynamics <: TransferDynamics
     ndeep::Int
 
     l::Float64
+    lz::Float64
     xₙ::Vector{Float64}
     zₙ::Vector{Float64}
 
@@ -17,7 +18,7 @@ struct PlanarVoxelTemperatureDynamics <: TransferDynamics
     Tmax::Vector{Float64}
     Tmin::Vector{Float64}
 
-    function PlanarVoxelTemperatureDynamics(nrows, ncols, ndeep, l, xₙ, zₙ, k, ρ, cₚ, T∞, h∞, Tmax, Tmin)
+    function PlanarVoxelTemperatureDynamics(nrows, ncols, ndeep, l, lz, xₙ, zₙ, k, ρ, cₚ, T∞, h∞, Tmax, Tmin)
 
         if isa(Tmax, Number)
             Tmax = Tmax .* ones(nrows * ncols * ndeep)
@@ -27,7 +28,7 @@ struct PlanarVoxelTemperatureDynamics <: TransferDynamics
             Tmin = Tmin .* ones(nrows * ncols * ndeep)
         end
 
-        return new(nrows, ncols, ndeep, l, xₙ, zₙ, k, ρ, cₚ, T∞, h∞, Tmax, Tmin)
+        return new(nrows, ncols, ndeep, l, lz, xₙ, zₙ, k, ρ, cₚ, T∞, h∞, Tmax, Tmin)
     end
 end
 
@@ -37,7 +38,7 @@ state_max(td::PlanarVoxelTemperatureDynamics) = td.Tmax
 
 function dynamics_function!(td::PlanarVoxelTemperatureDynamics, ds::AbstractVector{Ty}, s, t, zi) where {Ty}
     nrows, ncols, ndeep = td.nrows, td.ncols, td.ndeep
-    l, xₙ, zₙ = td.l, td.xₙ, td.zₙ
+    l, lz, xₙ, zₙ = td.l, td.lz, td.xₙ, td.zₙ
     k, ρ, cₚ, T∞ = td.k, td.ρ, td.cₚ, td.T∞
     h∞ = td.h∞
 
@@ -54,13 +55,13 @@ function dynamics_function!(td::PlanarVoxelTemperatureDynamics, ds::AbstractVect
     dTᵢ = view(rcdT, :, :, 1:(ndeep-1))
     Tᵢ = view(rcT, :, :, 1:(ndeep-1))
     Tⱼ = view(rcT, :, :, 2:ndeep)
-    dTᵢ .+= (α / l^2) .* (Tⱼ .- Tᵢ)
+    dTᵢ .+= (α / lz^2) .* (Tⱼ .- Tᵢ)
 
     # Up
     dTᵢ = view(rcdT, :, :, 2:ndeep)
     Tᵢ = view(rcT, :, :, 2:ndeep)
     Tⱼ = view(rcT, :, :, 1:(ndeep-1))
-    dTᵢ .+= (α / l^2) .* (Tⱼ .- Tᵢ)
+    dTᵢ .+= (α / lz^2) .* (Tⱼ .- Tᵢ)
 
     # From top
     dTᵢ = view(rcdT, :, 1:(nrows-1), :)
@@ -86,15 +87,15 @@ function dynamics_function!(td::PlanarVoxelTemperatureDynamics, ds::AbstractVect
     Tⱼ = view(rcT, 2:ncols, :, :)
     dTᵢ .+= (α / l^2) .* (Tⱼ .- Tᵢ)
 
-    # Convection to environemnt from top face
+    # Convection to environemnt from up face
     dTᵢ = view(rcdT, :, :, 1:1)
     Tᵢ = view(rcT, :, :, 1:1)
-    dTᵢ .+= (h∞ / (ρ * l * cₚ)) .* (T∞ .- Tᵢ)
+    dTᵢ .+= (h∞ / (ρ * lz * cₚ)) .* (T∞ .- Tᵢ)
 
-    # Conduction to environment from bottom face
+    # Conduction to environment from down face
     dTᵢ = view(rcdT, :, :, ndeep:ndeep)
     Tᵢ = view(rcT, :, :, ndeep:ndeep)
-    dTᵢ .+= (α / l^2) .* (T∞ .- Tᵢ)
+    dTᵢ .+= (α / lz^2) .* (T∞ .- Tᵢ)
 
     # Conduction to environment out left edge
     dTᵢ = view(rcdT, 1:1, :, :)
