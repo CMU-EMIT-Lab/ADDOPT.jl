@@ -154,9 +154,9 @@ function initial_guess(process::Process{PlanarHeatsourceDynamics, PlanarVoxelTem
         push!(X0, x)
         push!(U0, u)
         x = step_RK4(f!, x, u, Δtb, 0.0, 1)
-        println(mean(x[mask]))
-        flush(stdout)
     end
+    println(mean(x[mask]))
+    flush(stdout)
     
     push!(X0, step_RK4(f!, X0[end], U0[end], Δtc, 0.0, 1))
     for k in 1:(Nkc-1)

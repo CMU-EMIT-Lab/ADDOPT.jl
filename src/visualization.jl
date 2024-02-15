@@ -26,7 +26,7 @@ function animate_state_history(X, dt, n_rows, n_cols; path="animation_state.mp4"
 
 end
 
-function animate_measurement_history(Y, dt, n_rows, n_cols; path="animation_measured.mp4", strid=1, width=1000, height=400, quantity="Temperature (K)", scale=(300, 1600))
+function animate_measurement_history(Y, dt, n_rows, n_cols; path="animation_measured.mp4", strid=1, width=1000, height=400, quantity="Temperature (K)", scale=(300, 1600), l=1)
     N = n_rows * n_cols
 
     p = Progress(length(Y) ÷ strid; desc="Animating... ")
@@ -34,7 +34,7 @@ function animate_measurement_history(Y, dt, n_rows, n_cols; path="animation_meas
         Tk = Y[k]
         T_arr = reshape(Tk, (n_cols, n_rows))'
 
-        hm_T = heatmap(1:n_cols, 1:n_rows, T_arr, aspect_ratio=:equal, clim=scale, xlabel="X (mm)", ylabel="Z (mm)", title=quantity)
+        hm_T = heatmap((1:n_cols).*l, (1:n_rows).*l, T_arr, aspect_ratio=:equal, clim=scale, xlabel="X (mm)", ylabel="Z (mm)", title=quantity)
         plot(hm_T, size=(width, height), fmt=:png)
 
         next!(p)
