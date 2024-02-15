@@ -12,9 +12,9 @@ function field_to_spots(ts, U_ref, Δtₘᵢₙ, P, ω, px, pz, σ, l; method=:r
     Dtin = zeros(nf + 1)
     k = 1
     t = 0.0
-    pc, pn = l * ones(2), l * ones(2)
-    pₘᵢₙ = arrival_threshold * l
     oldidx = 1
+    pc, pn = [px[oldidx]; pz[oldidx]], l * ones(2)
+    pₘᵢₙ = arrival_threshold * l
 
     ΣU = zeros(nvox)
 
@@ -128,7 +128,7 @@ end
     return exp(-((px - x)^2 + (pz - z)^2) / (2σ^2))
 end
 
-function spots_to_field(xtzt, dts, P, ω, px, pz, σ, l; nf = 30)
+function spots_to_field(xtzt, dts, P, ω, px, pz, σ, l; nf=30)
     nvox = length(px)
     U, Dt = [], []
     Uin = [zeros(nvox) for _ in 1:(nf+1)]
