@@ -127,17 +127,48 @@ function step_RK4(f!, Xi, u, dt, t, zi)
     return Xf
 end
 
-function resample_vector_traj(t, traj, t_new)
+# Now assumes t_new is sorted, does a linear interpolation
+function resample_vector_traj(t_old, traj, t_new)
     nx = length(traj[1])
-    ret = []
+    Nk = length(traj)
+    ret = [zeros(eltype(traj[1]), nx) for _ in t_new]
+    k = 1
 
-    for i in 1:nx
-        interp = linear_interpolation(t, [v[i] for v in traj], extrapolation_bc=0)
-        push!(ret, interp.(t_new))
+    for (i, t) in enumerate(t_new)
+        while k < Nk && t > t_old[k+1]
+            k += 1
+        end
+
+        if k < Nk
+            α = (t - t_old[k]) / (t_old[k+1] - t_old[k])
+            ret[i] .= @. (1 - α) * traj[k] + α * traj[k+1]
+        else
+            ret[i] .= 0
+        end
     end
 
-    ret = hcat(ret...)
-    ret = collect(eachrow(ret))
+    # for i in 1:nx
+    #     interp = linear_interpolation(t, [v[i] for v in traj], extrapolation_bc=0)
+    #     push!(ret, interp.(t_new))
+    # end
+
+    # ret = hcat(ret...)
+    # ret = [copy(row) for row in eachrow(ret)]
 
     return ret
+end
+
+function refine_grid(u, n)
+    nx, ny = size(u)
+    nnx, nny = n * nx, n * ny
+
+    un = zeros(eltype(u), (nnx, nny))
+
+    for i in 1:nx
+        for j in 1:ny
+            un[(1:n).+(n*(i-1)), (1:n).+(n*(j-1))] .= u[i, j]
+        end
+    end
+
+    return un
 end
