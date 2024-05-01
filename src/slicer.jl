@@ -23,7 +23,7 @@ function gen_knots(layers, Nkb, Nkc, Nc)
 
     for c in 1:Nc
         points = layers[c]
-        append!(p̄, gen_knots(points, Nkb))
+        append!(p̄, gen_knots(points, Nkb[c]))
 
         if c < Nc
             append!(p̄, [p̄[end] for k in 1:Nkc])

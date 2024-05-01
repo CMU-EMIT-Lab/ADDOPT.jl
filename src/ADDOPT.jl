@@ -19,6 +19,7 @@ export gen_knots, gen_fill_ref, gen_xyz, gen_torch_ref, generate_wall_z₀, row_
 export traj_to_lines, lines_to_rapid
 export animate_measurement_history, animate_state_history, animate_3Dmeasurement_history_planar, animate_3Dstate_history_planar
 export field_to_spots, spots_to_field, refine_grid
+export kc2zi
 
 abstract type Dynamics end
 
@@ -31,6 +32,16 @@ function kc2zi(k, c, idx)
 
     for ci in 1:(c-1)
         zi += idx.Nkb[ci] + idx.Nkc[ci]
+    end
+
+    return zi
+end
+
+function kc2zi(k, c, Nkb, Nkc::Int)
+    zi = k
+
+    for ci in 1:(c-1)
+        zi += Nkb[ci] + Nkc
     end
 
     return zi
@@ -992,6 +1003,8 @@ function optimize_trajectory(problem::AdditiveProblem;
 
     x_l = [Vector{Any}(undef, Nkb[c] + Nkc[c]) for c in 1:Nc]
     x_u = [Vector{Any}(undef, Nkb[c] + Nkc[c]) for c in 1:Nc]
+    u_l = [Vector{Any}(undef, Nkb[c]) for c in 1:Nc]
+    u_u = [Vector{Any}(undef, Nkb[c]) for c in 1:Nc]
 
     # Set primal bounds and initial values
     for c in 1:Nc
@@ -1003,8 +1016,8 @@ function optimize_trajectory(problem::AdditiveProblem;
             end
 
             uj = z[idx.u[c][k]]
-            MOI.add_constraints(solver, uj, MOI.LessThan.(input_max(id)))
-            MOI.add_constraints(solver, uj, MOI.GreaterThan.(input_min(id)))
+            u_u[c][k] = MOI.add_constraints(solver, uj, MOI.LessThan.(input_max(id)))
+            u_l[c][k] = MOI.add_constraints(solver, uj, MOI.GreaterThan.(input_min(id)))
 
             xj = z[idx.x[c][k]]
             if c > 1 || k > 1
@@ -1048,7 +1061,7 @@ function optimize_trajectory(problem::AdditiveProblem;
 
         MOI.delete(solver, x_u[c][k])
         MOI.delete(solver, x_l[c][k])
-        x_l[c][k] = MOI.add_constraints(solver, xj, MOI.LessThan.(x_max))
+        x_u[c][k] = MOI.add_constraints(solver, xj, MOI.LessThan.(x_max))
         x_l[c][k] = MOI.add_constraints(solver, xj, MOI.GreaterThan.(x_min))
     end
 
@@ -1065,8 +1078,28 @@ function optimize_trajectory(problem::AdditiveProblem;
     flush(stdout)
     MOI.optimize!(solver)
 
+    J = MOI.get(solver, MOI.ObjectiveValue())
     result = MOI.get(solver, MOI.VariablePrimal(), z)
     λ = MOI.get(solver, MOI.NLPBlockDual())
+    μ_xₗ = [Vector{Vector{Float64}}(undef, Nkb[c] + Nkc[c]) for c in 1:Nc]
+    μ_xᵤ = [Vector{Vector{Float64}}(undef, Nkb[c] + Nkc[c]) for c in 1:Nc]
+    μ_uₗ = [Vector{Vector{Float64}}(undef, Nkb[c]) for c in 1:Nc]
+    μ_uᵤ = [Vector{Vector{Float64}}(undef, Nkb[c]) for c in 1:Nc]
+    for c in 1:Nc
+        for k in 1:Nkb[c]
+            μ_uₗ[c][k] = MOI.get(solver, MOI.ConstraintDual(), u_l[c][k])
+            μ_uᵤ[c][k] = MOI.get(solver, MOI.ConstraintDual(), u_u[c][k])
+
+            μ_xₗ[c][k] = MOI.get(solver, MOI.ConstraintDual(), x_l[c][k])
+            μ_xᵤ[c][k] = MOI.get(solver, MOI.ConstraintDual(), x_u[c][k])
+        end
+        for k in (Nkb[c]+1):(Nkb[c]+Nkc[c])
+            μ_xₗ[c][k] = MOI.get(solver, MOI.ConstraintDual(), x_l[c][k])
+            μ_xᵤ[c][k] = MOI.get(solver, MOI.ConstraintDual(), x_u[c][k])
+        end
+
+    end
+
     X = vcat([[result[idx.x[c][k]] for k in 1:(Nkb[c]+Nkc[c])] for c in 1:Nc]...)
     U = vcat([vcat([result[idx.u[c][k]] for k in 1:Nkb[c]], [input_idle(id) for k in 1:Nkc[c]]) for c in 1:Nc]...)
 
@@ -1074,7 +1107,7 @@ function optimize_trajectory(problem::AdditiveProblem;
         isnothing(problem.Δtc) ? [result[idx.Δtc[c][k]] for k in (Nkb[c]+1):(Nkb[c]+Nkc[c])] : problem.Δtc * ones(Nkc[c])
     ] for c in 1:Nc]...)
 
-    return result, X, U, Δt, λ
+    return J, result, X, U, Δt, λ, μ_xₗ, μ_xᵤ, μ_uₗ, μ_uᵤ
 end
 
 end

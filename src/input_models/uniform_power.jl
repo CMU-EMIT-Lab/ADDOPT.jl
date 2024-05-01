@@ -15,7 +15,7 @@ end
 @inline Nu(id::UniformPowerDynamics)::Int = 1
 @inline Nr(id::UniformPowerDynamics)::Int = 0
 
-input_min(id::UniformPowerDynamics) = [200.0]
+input_min(id::UniformPowerDynamics) = [0.0]
 input_max(id::UniformPowerDynamics) = [id.max_power]
 input_idle(id::UniformPowerDynamics) = [0.0]
 
