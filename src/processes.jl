@@ -1,5 +1,6 @@
 # Input models
 include("input_models/uniform_power.jl")
+include("input_models/two_bar_power.jl")
 include("input_models/planar_gmaw.jl")
 include("input_models/planar_gmaw_prescribed.jl")
 # include("input_models/planar_heatsource.jl")
@@ -16,6 +17,7 @@ include("property_models/null_property.jl")
 
 # Transfer models
 include("transfer_models/newton_lumped.jl")
+include("transfer_models/two_bar_lumped.jl")
 include("transfer_models/planar_voxel_mass_temp.jl")
 include("transfer_models/planar_voxel_temp.jl")
 include("transfer_models/voxel_energy_fill.jl")
@@ -39,6 +41,14 @@ end
 function FurnaceSimple(Pₘₐₓ, T∞, Tₘₐₓ, h, m, cₚ)
     id = UniformPowerDynamics(Pₘₐₓ, m, cₚ)
     td = NewtonLumpedDynamics(h, T∞, m, cₚ, Tₘₐₓ)
+    pd = NullPropertyDynamics()
+
+    return Process(id, td, pd)
+end
+
+function TwoBar(Tₘₐₓ, max_power, min_power, total_power, h, T∞, L₀, A1, A2, P1, P2, ρ, cₚ, E, α)
+    id = TwoBarPowerDynamics(max_power, min_power, total_power, h, T∞, L₀, A1, A2, P1, P2, ρ, cₚ)
+    td = TwoBarLumpedDynamics(Tₘₐₓ, h, T∞, L₀, A1, A2, P1, P2, ρ, cₚ, E, α)
     pd = NullPropertyDynamics()
 
     return Process(id, td, pd)

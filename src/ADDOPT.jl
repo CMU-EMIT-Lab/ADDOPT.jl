@@ -12,6 +12,7 @@ export AdditiveProblem, optimize_trajectory
 export Furnace, FurnaceSimple
 export PlanarLPBF, PlanarLPBFPrescribedMotion
 export WAAMPrescribedMotion, WAAMHardnessPrescribedMotion, WAAMHardnessPrescribedTemp
+export WAAMHardnessPrescribedMotionSlack
 export QuadraticObjective, TimeWeightedQuadraticObjective
 export temperature!, combined_dynamics!
 export marshall_z, initial_guess, resample_vector_traj, rollout, solve_RK4
@@ -20,6 +21,7 @@ export traj_to_lines, lines_to_rapid
 export animate_measurement_history, animate_state_history, animate_3Dmeasurement_history_planar, animate_3Dstate_history_planar
 export field_to_spots, spots_to_field, refine_grid
 export kc2zi
+export TwoBar, σy
 
 abstract type Dynamics end
 
@@ -61,6 +63,15 @@ end
 function inequality_constraint!(id::InputDynamics, c::AbstractVector{Ty}, r, u, t, zi) where {Ty}
 end
 
+Nε(td::TransferDynamics) = 0
+Nc_ε(td::TransferDynamics) = 0
+c_ε_min(td::TransferDynamics) = []
+c_ε_max(td::TransferDynamics) = []
+ε_min(td::TransferDynamics) = []
+ε_max(td::TransferDynamics) = []
+function compatibility_constraint!(td::TransferDynamics, c::AbstractVector{Ty}, εₖ, εₖ₋₁, sₖ) where {Ty}
+end
+
 ineq_min(id::Dynamics) = []
 ineq_max(id::Dynamics) = []
 
@@ -93,11 +104,14 @@ struct ProblemIndex
 
     Nx::Int # Number of states
     Nu::Int # Number of inputs
+    Nε::Int # Number of strains
 
+    Ncolloc::Int
     Neq::Int
     Nineq::Int
     Nconb::Int
     Nconc::Int
+    Nc_ε::Int
     Nconstr::Int
 
     Nz::Int
@@ -112,7 +126,7 @@ struct ProblemIndex
     free_cool_time::Bool
 end
 
-struct AdditiveProblem{OB<:Objective,ID<:InputDynamics,TD<:TransferDynamics,PD<:PropertyDynamics} <: MOI.AbstractNLPEvaluator
+mutable struct AdditiveProblem{OB<:Objective,ID<:InputDynamics,TD<:TransferDynamics,PD<:PropertyDynamics} <: MOI.AbstractNLPEvaluator
     process::Process{ID,TD,PD}
     objective::OB
 
@@ -141,6 +155,8 @@ struct AdditiveProblem{OB<:Objective,ID<:InputDynamics,TD<:TransferDynamics,PD<:
 
     boxconstraints::Vector{Tuple{Int,Int,Vector{Float64},Vector{Float64}}}
 
+    obj_hess_len::Int
+
     function AdditiveProblem(process::Process{ID,TD,PD}, objective::OB,
         Nkb, Nkc, Nc, x₀; x̄=nothing, Δtb=nothing, Δtc=nothing, final_constraint=false, hessian=true, ximin=nothing, xfmin=nothing,
         boxconstraints=nothing,
@@ -152,7 +168,7 @@ struct AdditiveProblem{OB<:Objective,ID<:InputDynamics,TD<:TransferDynamics,PD<:
         idx = generate_z_indices(
             typeof(Nkb) == Int ? Nkb * ones(Int, Nc) : Nkb,
             typeof(Nkc) == Int ? Nkc * ones(Int, Nc) : Nkc,
-            Nc, Nu(id), Nr(id), Ns(td), Nα(pd), Nc_eq(id), Nc_ineq(id),
+            Nc, Nu(id), Nr(id), Ns(td), Nα(pd), Nε(td), Nc_eq(id), Nc_ineq(id), Nc_ε(td),
             isnothing(Δtb), isnothing(Δtc))
 
         fₖ_cache = Dict{Tuple{DataType,Int},Any}()
@@ -194,16 +210,17 @@ struct AdditiveProblem{OB<:Objective,ID<:InputDynamics,TD<:TransferDynamics,PD<:
             cp,
             Δtb_min, Δtb_max,
             Δtc_min, Δtc_max,
-            boxconstraints)
+            boxconstraints, 0)
     end
 end
 
-function generate_z_indices(Nkb, Nkc, Nc, Nu, Nr, Ns, Nα, Neq, Nineq, free_build_time, free_cool_time)
-    Nx = Ns + Nα + Nr
+function generate_z_indices(Nkb, Nkc, Nc, Nu, Nr, Ns, Nα, Nε, Neq, Nineq, Nc_ε, free_build_time, free_cool_time)
+    Ncolloc = Ns + Nα + Nr
+    Nx = Ns + Nα + Nr + Nε
     NΔtb = free_build_time ? 1 : 0
     NΔtc = free_cool_time ? 1 : 0
-    Nconb = Nx + Neq + Nineq
-    Nconc = Nx
+    Nconb = Ncolloc + Neq + Nineq + Nc_ε
+    Nconc = Ncolloc + Nc_ε
 
     Nconstr = 0
     Nz = 0
@@ -229,6 +246,7 @@ function generate_z_indices(Nkb, Nkc, Nc, Nu, Nr, Ns, Nα, Neq, Nineq, free_buil
             i += Nu
             if free_build_time
                 push!(Δtb_cyc, i)
+                push!(Δtc_cyc, i)
                 i += NΔtb
             end
 
@@ -263,8 +281,8 @@ function generate_z_indices(Nkb, Nkc, Nc, Nu, Nr, Ns, Nα, Neq, Nineq, free_buil
 
     return ProblemIndex(
         Nkb, Nkc, Nc,
-        Nx, Nu,
-        Neq, Nineq, Nconb, Nconc,
+        Nx, Nu, Nε,
+        Ncolloc, Neq, Nineq, Nconb, Nconc, Nc_ε,
         Nconstr, Nz,
         u, x, Δtb, Δtc, constr,
         free_build_time, free_cool_time)
@@ -288,7 +306,7 @@ function combined_dynamics!(f, x, u, process::Process{ID,TD,PD}, t, zi, Δt) whe
 end
 
 function collocation_constraint!(process::Process{ID,TD,PD}, r::AbstractVector{T}, xₖ, uₖ, xₖ₊₁, Δt, t, zi, cp::CachePackage) where {T,ID,TD,PD}
-    Nx = length(xₖ)
+    Ncolloc = length(r)
 
     fₖ_cache = cp.fₖ_cache
     fₖ₊₁_cache = cp.fₖ₊₁_cache
@@ -298,23 +316,23 @@ function collocation_constraint!(process::Process{ID,TD,PD}, r::AbstractVector{T
 
     thread::Int = Threads.threadid()
     fₖ = get!(fₖ_cache, (T, thread)) do
-        zeros(T, Nx)
+        zeros(T, Ncolloc)
     end::Vector{T}
 
     fₖ₊₁ = get!(fₖ₊₁_cache, (T, thread)) do
-        zeros(T, Nx)
+        zeros(T, Ncolloc)
     end::Vector{T}
 
     fₘ = get!(fₘ_cache, (T, thread)) do
-        zeros(T, Nx)
+        zeros(T, Ncolloc)
     end::Vector{T}
 
     xₘ = get!(xₘ_cache, (T, thread)) do
-        zeros(T, Nx)
+        zeros(T, Ncolloc)
     end::Vector{T}
 
     ẋₘ = get!(ẋₘ_cache, (T, thread)) do
-        zeros(T, Nx)
+        zeros(T, Ncolloc)
     end::Vector{T}
 
     combined_dynamics!(fₖ, xₖ, uₖ, process, t, zi, Δt[1])
@@ -346,20 +364,36 @@ function inequality_constraint!(process::Process{ID,TD,PD}, r::AbstractVector{T}
 end
 
 function total_build_constraint!(process::Process{ID,TD,PD}, idx::ProblemIndex, r::AbstractVector{T}, xₖ, uₖ, xₖ₊₁, uₖ₊₁, Δt, t, zi, cp::CachePackage) where {T,ID,TD,PD}
-    Nx, Neq, Nineq = idx.Nx, idx.Neq, idx.Nineq
-    r_colloc = view(r, 1:Nx)
-    r_eq = view(r, (Nx+1):(Nx+Neq))
-    r_ineq = view(r, (Nx+Neq+1):(Nx+Neq+Nineq))
+    Nx, Ncolloc, Neq, Nineq = idx.Nx, idx.Ncolloc, idx.Neq, idx.Nineq
+    Nc_ε = idx.Nc_ε
+    r_colloc = view(r, 1:Ncolloc)
+    r_eq = view(r, (Ncolloc+1):(Ncolloc+Neq))
+    r_ineq = view(r, (Ncolloc+Neq+1):(Ncolloc+Neq+Nineq))
+    r_ε = view(r, (Ncolloc+Neq+Nineq+1):(Ncolloc+Neq+Nineq+Nc_ε))
 
-    collocation_constraint!(process, r_colloc, xₖ, uₖ, xₖ₊₁, Δt, t, zi, cp)
+    εₖ₊₁ = view(xₖ₊₁, (Nx-idx.Nε+1):Nx)
+    εₖ = view(xₖ, (Nx-idx.Nε+1):Nx)
+    sₖ₊₁ = view(xₖ₊₁, 1:Ns(process.transfer_dynamics))
+
+    collocation_constraint!(process, r_colloc, view(xₖ, 1:Ncolloc), uₖ, view(xₖ₊₁, 1:Ncolloc), Δt, t, zi, cp)
     equality_constraint!(process, r_eq, xₖ, uₖ, t, zi)
     inequality_constraint!(process, r_ineq, xₖ, uₖ, t, zi)
+    compatibility_constraint!(process.transfer_dynamics, r_ε, εₖ₊₁, εₖ, sₖ₊₁)
 end
 
 function total_cooling_constraint!(process::Process{ID,TD,PD}, idx::ProblemIndex, r::AbstractVector{T}, xₖ, xₖ₊₁, Δt, t, zi, cp::CachePackage) where {T,ID,TD,PD}
-    ui = input_idle(process.input_dynamics)
+    Nx, Ncolloc = idx.Nx, idx.Ncolloc
+    Nc_ε = idx.Nc_ε
+    r_colloc = view(r, 1:Ncolloc)
+    r_ε = view(r, (Ncolloc+1):(Ncolloc+Nc_ε))
 
-    collocation_constraint!(process, r, xₖ, ui, xₖ₊₁, Δt, t, zi, cp)
+    εₖ₊₁ = view(xₖ₊₁, (Nx-idx.Nε+1):Nx)
+    εₖ = view(xₖ, (Nx-idx.Nε+1):Nx)
+    sₖ₊₁ = view(xₖ₊₁, 1:Ns(process.transfer_dynamics))
+
+    ui = input_idle(process.input_dynamics)
+    collocation_constraint!(process, r_colloc, view(xₖ, 1:Ncolloc), ui, view(xₖ₊₁, 1:Ncolloc), Δt, t, zi, cp)
+    compatibility_constraint!(process.transfer_dynamics, r_ε, εₖ₊₁, εₖ, sₖ₊₁)
 end
 
 function constraints!(process::Process, c, z, idx::ProblemIndex, cp::CachePackage; xf=nothing, Δtb=nothing, Δtc=nothing)
@@ -622,11 +656,11 @@ function constraint_jacobian_sparsity(idx::ProblemIndex, process::Process, cp::C
 
     rdb = ones(Symbolics.Num, Nconb)
     rdc = ones(Symbolics.Num, Nconc)
-    xₖ = 0.002 * ones(Symbolics.Num, Nx)
-    uₖ = 0.003 * ones(Symbolics.Num, Nu)
-    xₖ₊₁ = 0.004 * ones(Symbolics.Num, Nx)
-    uₖ₊₁ = 0.005 * ones(Symbolics.Num, Nu)
-    Δtd = 0.006 * ones(Symbolics.Num, 1)
+    xₖ = 20.0 * ones(Symbolics.Num, Nx)
+    uₖ = 30.0 * ones(Symbolics.Num, Nu)
+    xₖ₊₁ = 40.0 * ones(Symbolics.Num, Nx)
+    uₖ₊₁ = 50.0 * ones(Symbolics.Num, Nu)
+    Δtd = 60.0 * ones(Symbolics.Num, 1)
     t = 0.0
     zi = 1
 
@@ -758,40 +792,97 @@ function constraint_jacobian_sparsity(idx::ProblemIndex, process::Process, cp::C
     return total_structure, sparsity_cache
 end
 
+function build_jacobian_vector_product(z, λ, prob::AdditiveProblem)
+    Nx, Nu, Nconb = prob.idx.Nx, prob.idx.Nu, prob.idx.Nconb
+    Δt = 0.04
+    t = 0.0
+    zi = 1
+    build_constraint_z!(r, z) = total_build_constraint!(prob.process, prob.idx, r, view(z, 1:Nx), view(z, (Nx+1):(Nx+Nu)),
+        view(z, (Nx+Nu+1):(2Nx+Nu)), view(z, (2Nx+Nu+1):(2Nx+2Nu)), Δt, t, zi, prob.cp)
+
+    Nz = length(z)
+    r = zeros(eltype(z), Nconb)
+    J = zeros(eltype(z), (Nconb, Nz))
+    Jλ = zeros(eltype(z), Nz)
+    ForwardDiff.jacobian!(J, build_constraint_z!, r, z)
+    mul!(Jλ, J', λ)
+
+    return Jλ
+end
+
+function build_hessian(z, λ, prob::AdditiveProblem)
+    return ForwardDiff.jacobian(z -> build_jacobian_vector_product(z, λ, prob), z)
+end
+
+function cooling_jacobian_vector_product(z, λ, prob::AdditiveProblem)
+    Nx, Nu, Nconc = prob.idx.Nx, prob.idx.Nu, prob.idx.Nconc
+    Δt = 0.04
+    t = 0.0
+    zi = 1
+    cooling_constraint_z!(r, z) = total_cooling_constraint!(prob.process, prob.idx, r, view(z, 1:Nx), view(z, (Nx+1):(2Nx)),
+        Δt, t, zi, prob.cp)
+
+    Nz = length(z)
+    r = zeros(eltype(z), Nconc)
+    J = zeros(eltype(z), (Nconc, Nz))
+    Jλ = zeros(eltype(z), Nz)
+    ForwardDiff.jacobian!(J, cooling_constraint_z!, r, z)
+    mul!(Jλ, J', λ)
+
+    return Jλ
+end
+
+function cooling_hessian(z, λ, prob::AdditiveProblem)
+    return ForwardDiff.jacobian(z -> cooling_jacobian_vector_product(z, λ, prob), z)
+end
+
 function constraint_hessian_structure(prob::AdditiveProblem)
     structure = []
     idx = prob.idx
+    Nc, Nkb, Nkc = idx.Nc, idx.Nkb, idx.Nkc
+    Nx, Nu = idx.Nx, idx.Nu
+
+    rb, cb, _ = findnz(sparse(ones(2(Nx + Nu), 2(Nx + Nu))))
+    rc, cc, _ = findnz(sparse(ones(2Nx, 2Nx)))
 
     for cyc in 1:Nc
         if cyc > 1
             xₖ = idx.x[cyc-1][end]
-            Δt = idx.Δtc[cyc-1][end]
+            # Δt = idx.Δtc[cyc-1][end]
             xₖ₊₁ = idx.x[cyc][1]
             zₖ = xₖ[1]:xₖ₊₁[end]
+
+            append!(structure, collect(zip(rc .+ xₖ[1] .- 1, cc .+ xₖ[1] .- 1)))
         end
 
         for k in 1:(Nkb[cyc]-1)
             xₖ = idx.x[cyc][k]
             uₖ = idx.u[cyc][k]
-            Δt = idx.Δtb[cyc][k]
+            # Δt = idx.Δtb[cyc][k]
             xₖ₊₁ = idx.x[cyc][k+1]
             uₖ₊₁ = idx.u[cyc][k+1]
             zₖ = xₖ[1]:uₖ₊₁[end]
+
+            append!(structure, collect(zip(rb .+ xₖ[1] .- 1, cb .+ xₖ[1] .- 1)))
         end
 
-        k = Nkb[cyc]
-        xₖ = idx.x[cyc][k]
-        uₖ = idx.u[cyc][k]
-        Δt = idx.Δtb[cyc][k]
-        xₖ₊₁ = idx.x[cyc][k+1]
-        uₖ₊₁ = idx.u[cyc][k+1]
-        zₖ = xₖ[1]:uₖ₊₁[end]
+        # k = Nkb[cyc]
+        # xₖ = idx.x[cyc][k]
+        # uₖ = idx.u[cyc][k]
+        # # Δt = idx.Δtb[cyc][k]
+        # xₖ₊₁ = idx.x[cyc][k+1]
+        # # uₖ₊₁ = idx.u[cyc][k+1]
+        # # zₖ = xₖ[1]:uₖ₊₁[end]
+
+        # append!(structure, collect(zip(rb .+ xₖ[1] .- 1, cb .+ xₖ[1] .- 1)))
 
         for k in (Nkb[cyc]+1):(Nkb[cyc]+Nkc[cyc]-1)
             xₖ = idx.x[cyc][k]
-            Δt = idx.Δtc[cyc][k]
+            # Δt = idx.Δtc[cyc][k]
             xₖ₊₁ = idx.x[cyc][k+1]
             zₖ = xₖ[1]:xₖ₊₁[end]
+
+            append!(structure, collect(zip(rc .+ xₖ[1] .- 1, cc .+ xₖ[1] .- 1)))
         end
     end
 
@@ -800,40 +891,58 @@ end
 
 function constraint_hessian_values(prob::AdditiveProblem, H, z, μ)
     idx = prob.idx
+    Nc, Nkb, Nkc = idx.Nc, idx.Nkb, idx.Nkc
+    Nx, Nu = idx.Nx, idx.Nu
+    Nconb, Nconc = idx.Nconb, idx.Nconc
+    i = 1
+    j = 1
 
     for cyc in 1:Nc
         if cyc > 1
             xₖ = idx.x[cyc-1][end]
-            Δt = idx.Δtc[cyc-1][end]
+            # Δt = idx.Δtc[cyc-1][end]
             xₖ₊₁ = idx.x[cyc][1]
             zₖ = xₖ[1]:xₖ₊₁[end]
-            # ForwardDiff.jacobian!()
-            (r, z) -> total_cooling_constraint!(process, idx, r, xₖ, xₖ₊₁, Δtk, t, zi, cp)
+
+            H[i:(i+(2Nx)^2-1)] .= vec(cooling_hessian(z[zₖ], μ[j:(j+Nconc-1)], prob))
+            i += (2Nx)^2
+            j += Nconc
         end
 
         for k in 1:(Nkb[cyc]-1)
             # (r, z) -> total_build_constraint!(process, idx, r, xₖ, uₖ, xₖ₊₁, uₖ₊₁, Δtd, t, zi, cp)
             xₖ = idx.x[cyc][k]
             uₖ = idx.u[cyc][k]
-            Δt = idx.Δtb[cyc][k]
+            # Δt = idx.Δtb[cyc][k]
             xₖ₊₁ = idx.x[cyc][k+1]
             uₖ₊₁ = idx.u[cyc][k+1]
             zₖ = xₖ[1]:uₖ₊₁[end]
+
+            H[i:(i+(2Nx+2Nu)^2-1)] .= vec(build_hessian(z[zₖ], μ[j:(j+Nconb-1)], prob))
+            i += (2Nx + 2Nu)^2
+            j += Nconb
         end
 
-        k = Nkb[cyc]
-        xₖ = idx.x[cyc][k]
-        uₖ = idx.u[cyc][k]
-        Δt = idx.Δtb[cyc][k]
-        xₖ₊₁ = idx.x[cyc][k+1]
-        uₖ₊₁ = idx.u[cyc][k+1]
-        zₖ = xₖ[1]:uₖ₊₁[end]
+        # k = Nkb[cyc]
+        # xₖ = idx.x[cyc][k]
+        # uₖ = idx.u[cyc][k]
+        # Δt = idx.Δtb[cyc][k]
+        # xₖ₊₁ = idx.x[cyc][k+1]
+        # uₖ₊₁ = idx.u[cyc][k+1]
+        # zₖ = xₖ[1]:uₖ₊₁[end]
+        # H[i:(i+(2Nx+2Nu)^2-1)] .= vec(build_hessian(z[zₖ], μ[j:(j+Nconb-1)], prob))
+        # i += (2Nx + 2Nu)^2
+        j+= Nconb
 
         for k in (Nkb[cyc]+1):(Nkb[cyc]+Nkc[cyc]-1)
             xₖ = idx.x[cyc][k]
-            Δt = idx.Δtc[cyc][k]
+            # Δt = idx.Δtc[cyc][k]
             xₖ₊₁ = idx.x[cyc][k+1]
             zₖ = xₖ[1]:xₖ₊₁[end]
+
+            H[i:(i+(2Nx)^2-1)] .= vec(cooling_hessian(z[zₖ], μ[j:(j+Nconc-1)], prob))
+            i += (2Nx)^2
+            j += Nconc
         end
     end
 end
@@ -856,26 +965,17 @@ end
 
 function MOI.hessian_lagrangian_structure(prob::AdditiveProblem)
     structure = objective_hessian_structure(prob.objective, prob.idx)
-    # append!(structure, constraint_hessian_structure(prob))
+    prob.obj_hess_len = length(structure)
+    append!(structure, constraint_hessian_structure(prob))
 
     return structure
 end
 
 function MOI.eval_hessian_lagrangian(prob::AdditiveProblem, H, z, σ, μ)
     objective_hessian_values(prob.objective, prob.idx, H, z)
-    H .*= σ
+    H[1:prob.obj_hess_len] .*= σ
 
-    # ### TEMP EXPERIMENT
-    # i = 0
-    # for c in 1:prob.idx.Nc
-    #     for k in 1:prob.idx.Nkb[c]
-    #         i += prob.idx.Nx
-    #         H[(i+1):(i+prob.idx.Nu)] .= μ[406 + (k-1)*406]
-    #         i += prob.idx.Nu
-    #     end
-    # end
-
-    # constraint_hessian_values(prob, H, z, μ)
+    constraint_hessian_values(prob, (@view H[(prob.obj_hess_len+1):end]), z, μ)
 end
 
 function MOI.features_available(prob::AdditiveProblem)
@@ -908,6 +1008,7 @@ function optimize_trajectory(problem::AdditiveProblem;
     idx = problem.idx
     Nz, Nconstr = idx.Nz, idx.Nconstr
     Nx, Neq, Nineq = idx.Nx, idx.Neq, idx.Nineq
+    Ncolloc = idx.Ncolloc
     process = problem.process
     Nkb, Nkc, Nc = idx.Nkb, idx.Nkc, idx.Nc
     id, td, pd = process.input_dynamics, process.transfer_dynamics, process.property_dynamics
@@ -970,10 +1071,10 @@ function optimize_trajectory(problem::AdditiveProblem;
     @time MOI.eval_constraint_jacobian(problem, jt, z₀)
     @time MOI.eval_constraint_jacobian(problem, jt, z₀)
 
-    c_lb = [zeros(Nx + Neq); ineq_min(id)]
-    c_ub = [zeros(Nx + Neq); ineq_max(id)]
-    c_lc = zeros(Nx)
-    c_uc = zeros(Nx)
+    c_lb = [zeros(Ncolloc + Neq); ineq_min(id); c_ε_min(td)]
+    c_ub = [zeros(Ncolloc + Neq); ineq_max(id); c_ε_max(td)]
+    c_lc = [zeros(Ncolloc); c_ε_min(td)]
+    c_uc = [zeros(Ncolloc); c_ε_max(td)]
 
     c_l = []
     c_u = []
@@ -996,10 +1097,12 @@ function optimize_trajectory(problem::AdditiveProblem;
     z = MOI.add_variables(solver, Nz)
     x_min = [state_min(td)
         property_min(pd)
-        state_min(id)]
+        state_min(id)
+        ε_min(td)]
     x_max = [state_max(td)
         property_max(pd)
-        state_max(id)]
+        state_max(id)
+        ε_max(td)]
 
     x_l = [Vector{Any}(undef, Nkb[c] + Nkc[c]) for c in 1:Nc]
     x_u = [Vector{Any}(undef, Nkb[c] + Nkc[c]) for c in 1:Nc]
