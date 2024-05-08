@@ -10,19 +10,19 @@ m = 0.01        # kg
 cₚ = 502.416   # J/kg 
 process = Furnace(Pₘₐₓ, T∞, Tₘₐₓ, h, m, cₚ)
 
-Q = Diagonal([1e-7; 1e6])
-R = Diagonal([1e-7])
+Q = Diagonal([0.0; 1e0])
+R = Diagonal([1e-8])
 Qf = 10 * Q
 x₀ = [T∞; 0.0]
-x̄ = [T∞; 0.9]
+x̄ = [T∞; 0.4]
 ū = [0.0]
 objective = QuadraticObjective(Q, R, Qf, x̄, ū)
 
 Nk = 250
 Nc = 3
-problem = AdditiveProblem(process, objective, [Nk; Nk; Nk], [Nk; Nk; 3Nk], Nc, x₀, x̄=[700.0; 1.0], Δtb=0.04, Δtc=0.04, final_constraint=true, xfmin=[0.0; 0.0])
+problem = AdditiveProblem(process, objective, [Nk÷2; Nk÷2; Nk], [Nk; Nk; 3Nk], Nc, x₀, x̄=[300.0; 1.0], Δtb=nothing, Δtc=nothing, final_constraint=true, xfmin=[0.0; 0.0], hessian=true)
 
-J, z, X, U, Δt, λ, μ_xₗ, μ_xᵤ, μ_uₗ, μ_uᵤ = optimize_trajectory(problem; max_iter=1000, c_tol=1.0e-6, xg=[600.0; 0.4])
+J, z, X, U, Δt, λ, μ_xₗ, μ_xᵤ, μ_uₗ, μ_uᵤ = optimize_trajectory(problem; max_iter=1000, c_tol=1.0e-6, xg=[600.0; 0.2])
 Nt = length(X)
 T = [X[i][1] for i in 1:Nt]
 y = [X[i][2] for i in 1:Nt]

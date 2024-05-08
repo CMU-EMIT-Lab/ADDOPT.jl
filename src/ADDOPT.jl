@@ -794,11 +794,11 @@ end
 
 function build_jacobian_vector_product(z, λ, prob::AdditiveProblem)
     Nx, Nu, Nconb = prob.idx.Nx, prob.idx.Nu, prob.idx.Nconb
-    Δt = 0.04
+    NΔt = isnothing(prob.Δtb) ? 1 : 0
     t = 0.0
     zi = 1
     build_constraint_z!(r, z) = total_build_constraint!(prob.process, prob.idx, r, view(z, 1:Nx), view(z, (Nx+1):(Nx+Nu)),
-        view(z, (Nx+Nu+1):(2Nx+Nu)), view(z, (2Nx+Nu+1):(2Nx+2Nu)), Δt, t, zi, prob.cp)
+        view(z, (Nx+Nu+NΔt+1):(2Nx+Nu+NΔt)), view(z, (2Nx+Nu+NΔt+1):(2Nx+2Nu+NΔt)), isnothing(prob.Δtb) ? z[Nx+Nu+1] : prob.Δtb, t, zi, prob.cp)
 
     Nz = length(z)
     r = zeros(eltype(z), Nconb)
@@ -811,16 +811,19 @@ function build_jacobian_vector_product(z, λ, prob::AdditiveProblem)
 end
 
 function build_hessian(z, λ, prob::AdditiveProblem)
-    return ForwardDiff.jacobian(z -> build_jacobian_vector_product(z, λ, prob), z)
+    H = ForwardDiff.jacobian(z -> build_jacobian_vector_product(z, λ, prob), z)
+    H[diagind(H)] .*= 2
+    H ./= 2
+    return H
 end
 
 function cooling_jacobian_vector_product(z, λ, prob::AdditiveProblem)
     Nx, Nu, Nconc = prob.idx.Nx, prob.idx.Nu, prob.idx.Nconc
-    Δt = 0.04
+    NΔt = isnothing(prob.Δtc) ? 1 : 0
     t = 0.0
     zi = 1
-    cooling_constraint_z!(r, z) = total_cooling_constraint!(prob.process, prob.idx, r, view(z, 1:Nx), view(z, (Nx+1):(2Nx)),
-        Δt, t, zi, prob.cp)
+    cooling_constraint_z!(r, z) = total_cooling_constraint!(prob.process, prob.idx, r, view(z, 1:Nx), view(z, (Nx+NΔt+1):(2Nx+NΔt)),
+        isnothing(prob.Δtc) ? z[Nx+1] : prob.Δtc, t, zi, prob.cp)
 
     Nz = length(z)
     r = zeros(eltype(z), Nconc)
@@ -833,7 +836,35 @@ function cooling_jacobian_vector_product(z, λ, prob::AdditiveProblem)
 end
 
 function cooling_hessian(z, λ, prob::AdditiveProblem)
-    return ForwardDiff.jacobian(z -> cooling_jacobian_vector_product(z, λ, prob), z)
+    H = ForwardDiff.jacobian(z -> cooling_jacobian_vector_product(z, λ, prob), z)
+    H[diagind(H)] .*= 2
+    H ./= 2
+    return H
+end
+
+function build2cool_jacobian_vector_product(z, λ, prob::AdditiveProblem)
+    Nx, Nu, Nconb = prob.idx.Nx, prob.idx.Nu, prob.idx.Nconb
+    NΔt = isnothing(prob.Δtb) ? 1 : 0
+    t = 0.0
+    zi = 1
+    build_constraint_z!(r, z) = total_build_constraint!(prob.process, prob.idx, r, view(z, 1:Nx), view(z, (Nx+1):(Nx+Nu)),
+        view(z, (Nx+Nu+NΔt+1):(2Nx+Nu+NΔt)), input_idle(prob.process.input_dynamics), isnothing(prob.Δtb) ? z[Nx+Nu+1] : prob.Δtb, t, zi, prob.cp)
+
+    Nz = length(z)
+    r = zeros(eltype(z), Nconb)
+    J = zeros(eltype(z), (Nconb, Nz))
+    Jλ = zeros(eltype(z), Nz)
+    ForwardDiff.jacobian!(J, build_constraint_z!, r, z)
+    mul!(Jλ, J', λ)
+
+    return Jλ
+end
+
+function build2cool_hessian(z, λ, prob::AdditiveProblem)
+    H = ForwardDiff.jacobian(z -> build2cool_jacobian_vector_product(z, λ, prob), z)
+    H[diagind(H)] .*= 2
+    H ./= 2
+    return H
 end
 
 function constraint_hessian_structure(prob::AdditiveProblem)
@@ -841,9 +872,12 @@ function constraint_hessian_structure(prob::AdditiveProblem)
     idx = prob.idx
     Nc, Nkb, Nkc = idx.Nc, idx.Nkb, idx.Nkc
     Nx, Nu = idx.Nx, idx.Nu
+    NΔtc = isnothing(prob.Δtc) ? 1 : 0
+    NΔtb = isnothing(prob.Δtb) ? 1 : 0
 
-    rb, cb, _ = findnz(sparse(ones(2(Nx + Nu), 2(Nx + Nu))))
-    rc, cc, _ = findnz(sparse(ones(2Nx, 2Nx)))
+    rb, cb, _ = findnz(sparse(ones(2(Nx + Nu) + NΔtb, 2(Nx + Nu) + NΔtb)))
+    rc, cc, _ = findnz(sparse(ones(2Nx + NΔtc, 2Nx + NΔtc)))
+    rbc, cbc, _ = findnz(sparse(ones(2Nx + Nu + NΔtb, 2Nx + Nu + NΔtb)))
 
     for cyc in 1:Nc
         if cyc > 1
@@ -866,15 +900,15 @@ function constraint_hessian_structure(prob::AdditiveProblem)
             append!(structure, collect(zip(rb .+ xₖ[1] .- 1, cb .+ xₖ[1] .- 1)))
         end
 
-        # k = Nkb[cyc]
-        # xₖ = idx.x[cyc][k]
-        # uₖ = idx.u[cyc][k]
-        # # Δt = idx.Δtb[cyc][k]
-        # xₖ₊₁ = idx.x[cyc][k+1]
-        # # uₖ₊₁ = idx.u[cyc][k+1]
-        # # zₖ = xₖ[1]:uₖ₊₁[end]
+        k = Nkb[cyc]
+        xₖ = idx.x[cyc][k]
+        uₖ = idx.u[cyc][k]
+        # Δt = idx.Δtb[cyc][k]
+        xₖ₊₁ = idx.x[cyc][k+1]
+        # uₖ₊₁ = idx.u[cyc][k+1]
+        # zₖ = xₖ[1]:uₖ₊₁[end]
 
-        # append!(structure, collect(zip(rb .+ xₖ[1] .- 1, cb .+ xₖ[1] .- 1)))
+        append!(structure, collect(zip(rbc .+ xₖ[1] .- 1, cbc .+ xₖ[1] .- 1)))
 
         for k in (Nkb[cyc]+1):(Nkb[cyc]+Nkc[cyc]-1)
             xₖ = idx.x[cyc][k]
@@ -894,6 +928,11 @@ function constraint_hessian_values(prob::AdditiveProblem, H, z, μ)
     Nc, Nkb, Nkc = idx.Nc, idx.Nkb, idx.Nkc
     Nx, Nu = idx.Nx, idx.Nu
     Nconb, Nconc = idx.Nconb, idx.Nconc
+    NΔtc = isnothing(prob.Δtc) ? 1 : 0
+    NΔtb = isnothing(prob.Δtb) ? 1 : 0
+    NHc = (2Nx + NΔtc)^2
+    NHb = (2Nx + 2Nu + NΔtb)^2
+    NHbc = (2Nx + Nu + NΔtb)^2
     i = 1
     j = 1
 
@@ -904,8 +943,8 @@ function constraint_hessian_values(prob::AdditiveProblem, H, z, μ)
             xₖ₊₁ = idx.x[cyc][1]
             zₖ = xₖ[1]:xₖ₊₁[end]
 
-            H[i:(i+(2Nx)^2-1)] .= vec(cooling_hessian(z[zₖ], μ[j:(j+Nconc-1)], prob))
-            i += (2Nx)^2
+            H[i:(i+NHc-1)] .= vec(cooling_hessian(z[zₖ], μ[j:(j+Nconc-1)], prob))
+            i += NHc
             j += Nconc
         end
 
@@ -918,21 +957,21 @@ function constraint_hessian_values(prob::AdditiveProblem, H, z, μ)
             uₖ₊₁ = idx.u[cyc][k+1]
             zₖ = xₖ[1]:uₖ₊₁[end]
 
-            H[i:(i+(2Nx+2Nu)^2-1)] .= vec(build_hessian(z[zₖ], μ[j:(j+Nconb-1)], prob))
-            i += (2Nx + 2Nu)^2
+            H[i:(i+NHb-1)] .= vec(build_hessian(z[zₖ], μ[j:(j+Nconb-1)], prob))
+            i += NHb
             j += Nconb
         end
 
-        # k = Nkb[cyc]
-        # xₖ = idx.x[cyc][k]
-        # uₖ = idx.u[cyc][k]
+        k = Nkb[cyc]
+        xₖ = idx.x[cyc][k]
+        uₖ = idx.u[cyc][k]
         # Δt = idx.Δtb[cyc][k]
-        # xₖ₊₁ = idx.x[cyc][k+1]
+        xₖ₊₁ = idx.x[cyc][k+1]
         # uₖ₊₁ = idx.u[cyc][k+1]
-        # zₖ = xₖ[1]:uₖ₊₁[end]
-        # H[i:(i+(2Nx+2Nu)^2-1)] .= vec(build_hessian(z[zₖ], μ[j:(j+Nconb-1)], prob))
-        # i += (2Nx + 2Nu)^2
-        j+= Nconb
+        zₖ = xₖ[1]:xₖ₊₁[end]
+        H[i:(i+NHbc-1)] .= vec(build2cool_hessian(z[zₖ], μ[j:(j+Nconb-1)], prob))
+        i += NHbc
+        j += Nconb
 
         for k in (Nkb[cyc]+1):(Nkb[cyc]+Nkc[cyc]-1)
             xₖ = idx.x[cyc][k]
@@ -940,8 +979,8 @@ function constraint_hessian_values(prob::AdditiveProblem, H, z, μ)
             xₖ₊₁ = idx.x[cyc][k+1]
             zₖ = xₖ[1]:xₖ₊₁[end]
 
-            H[i:(i+(2Nx)^2-1)] .= vec(cooling_hessian(z[zₖ], μ[j:(j+Nconc-1)], prob))
-            i += (2Nx)^2
+            H[i:(i+NHc-1)] .= vec(cooling_hessian(z[zₖ], μ[j:(j+Nconc-1)], prob))
+            i += NHc
             j += Nconc
         end
     end
@@ -1061,6 +1100,18 @@ function optimize_trajectory(problem::AdditiveProblem;
         cs = [c for (r, c) in structure]
         @time MOI.eval_hessian_lagrangian(problem, H0, z₀, 1.0, μ0)
         @time MOI.eval_hessian_lagrangian(problem, H0, z₀, 1.0, μ0)
+
+        # Hess0 = sparse(rs, cs, H0)
+        # display(Array(Hess0))
+        # function lagrangian(z)
+        #     c = zeros(eltype(z), Nconstr)
+        #     MOI.eval_constraint(problem, c, z)
+        #     return MOI.eval_objective(problem, z) + μ0 ⋅ c
+        # end
+        # HessNaive = ForwardDiff.hessian(lagrangian, z₀)
+        # display(HessNaive)
+        # HessNaive = sparse(HessNaive)
+        # @show norm(vec(Hess0 .- HessNaive[1:(end-1),1:(end-1)]))
     end
 
     println("Checking constraint function...")
