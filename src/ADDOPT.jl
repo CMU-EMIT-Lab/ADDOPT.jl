@@ -629,22 +629,6 @@ function constraint_jacobian!(process::Process, jac, z, idx::ProblemIndex, spars
         end
     end
 
-    # res = zeros(idx.Nconstr, idx.Nz)
-    # rp = zeros(idx.Nconstr)
-    # ForwardDiff.jacobian!(res, (r, z) -> constraints!(process, r, z, idx, cp; xf=prob.x̄, Δtb=Δtb, Δtc=Δtc), rp, z)
-    # # println("reference")#tf = borderless,
-    # # pretty_table(res,  noheader = true, crop = :none, formatters = ft_printf("%3.1e"))
-    # # display(res)
-    # # show(stdout, "text/plain", res)
-    # # display(sparse(res))
-
-    # rs = [r for (r, c) in prob.constraint_jacobian_sparsity]
-    # cs = [c for (r, c) in prob.constraint_jacobian_sparsity]
-    # # println("actual")
-    # # pretty_table(sparse(rs, cs, jac), noheader = true, crop = :none, formatters = ft_printf("%3.1e"))
-    # # display(Matrix(sparse(rs, cs, jac)))
-    # # show(stdout, "text/plain", Matrix(sparse(rs, cs, jac)))
-    # display(norm(sparse(rs, cs, jac)-sparse(res)))
 end
 
 function constraint_jacobian_sparsity(idx::ProblemIndex, process::Process, cp::CachePackage; Δtb=nothing, Δtc=nothing)
