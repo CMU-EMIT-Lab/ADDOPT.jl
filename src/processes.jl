@@ -1,13 +1,12 @@
 # Input models
 include("input_models/uniform_power.jl")
 include("input_models/two_bar_power.jl")
-include("input_models/planar_gmaw.jl")
-include("input_models/planar_gmaw_prescribed.jl")
 # include("input_models/planar_heatsource.jl")
 include("input_models/planar_heatsource_relaxed.jl")
 include("input_models/planar_heatsource_prescribed.jl")
 include("input_models/gmaw_prescribed.jl")
 include("input_models/gmaw_fully_prescribed.jl")
+include("input_models/gmaw_fully_prescribed_slack.jl")
 include("input_models/null_input.jl")
 
 # Property models
@@ -18,7 +17,6 @@ include("property_models/null_property.jl")
 # Transfer models
 include("transfer_models/newton_lumped.jl")
 include("transfer_models/two_bar_lumped.jl")
-include("transfer_models/planar_voxel_mass_temp.jl")
 include("transfer_models/planar_voxel_temp.jl")
 include("transfer_models/voxel_energy_fill.jl")
 include("transfer_models/voxel_energy.jl")
@@ -130,63 +128,6 @@ function WAAMHardnessCooling(nx, ny, nz, l, k, ρ, cₚ, T∞, T₀, wire_diam, 
     return Process(id, td, pd)
 end
 
-function PlanarWAAMHardness(nrows, ncols, l, k, ρ, cₚ, T∞, T₀, Tₗ, wire_diam, h∞, h₀, hₐᵣ, η, γᵣ, γₕ, wₓ, bₕ, A, τ)
-    n_voxels = nrows * ncols
-
-    # Generate x-z matrix/vector
-    rc(idx) = row_col(nrows, ncols, idx)
-    x = rc.(1:n_voxels)
-    x = l .* vcat(collect.(x)'...)
-    reverse!(x, dims=2)
-
-    xₙ = x[:, 1]
-    zₙ = x[:, 2]
-
-    id = PlanarGMAWDynamics(nrows, ncols, l, xₙ, zₙ, k, ρ, cₚ, T∞, Tₗ, wire_diam, h∞, h₀, hₐᵣ, η, γᵣ, γₕ, wₓ, bₕ)
-    td = PlanarVoxelMassEnergyDynamics(nrows, ncols, l, w, xₙ, zₙ, kₘ, kₐ, ρₘ, ρₐ, cₚₘ, cₚₐ, T∞, T₀, wire_diam, h∞, h₀, Tmin, Tmax)
-    pd = HardnessDynamics(A, τ, n=n_voxels)
-
-    return Process(id, td, pd)
-end
-
-function PlanarWAAM(nrows, ncols, l, w, kₘ, kₐ, ρₘ, ρₐ, cₚₘ, cₚₐ, T∞, T₀, wire_diam, h∞, h₀, hₐᵣ, η, γᵣ, γₕ, wₓ, bₕ, Tmin, Tmax)
-    n_voxels = nrows * ncols
-
-    # Generate x-z matrix/vector
-    rc(idx) = row_col(nrows, ncols, idx)
-    x = rc.(1:n_voxels)
-    x = l .* vcat(collect.(x)'...)
-    reverse!(x, dims=2)
-
-    xₙ = x[:, 1]
-    zₙ = x[:, 2]
-
-    id = PlanarGMAWDynamics(nrows, ncols, l, xₙ, zₙ, k, ρ, cₚ, T∞, Tₗ, wire_diam, h∞, h₀, hₐᵣ, η, γᵣ, γₕ, wₓ, bₕ)
-    td = PlanarVoxelMassEnergyDynamics(nrows, ncols, l, w, xₙ, zₙ, kₘ, kₐ, ρₘ, ρₐ, cₚₘ, cₚₐ, T∞, T₀, wire_diam, h∞, h₀, Tmin, Tmax)
-    pd = NullPropertyDynamics()
-
-    return Process(id, td, pd)
-end
-
-function PlanarWAAMPrescribedMotion(nrows, ncols, l, w, kₘ, kₐ, ρₘ, ρₐ, cₚₘ, cₚₐ, T∞, T₀, wire_diam, h∞, h₀, hₐᵣ, η, γᵣ, γₕ, wₓ, bₕ, Tmin, Tmax, xmin, xmax, tmin, tmax)
-    n_voxels = nrows * ncols
-
-    # Generate x-z matrix/vector
-    rc(idx) = row_col(nrows, ncols, idx)
-    x = rc.(1:n_voxels)
-    x = l .* vcat(collect.(x)'...)
-    reverse!(x, dims=2)
-
-    xₙ = x[:, 1]
-    zₙ = x[:, 2]
-
-    id = PlanarGMAWDynamicsPrescribed(nrows, ncols, l, xₙ, zₙ, ρₘ, cₚₘ, T∞, 1700, wire_diam, h∞, h₀, hₐᵣ, η, γᵣ, γₕ, wₓ, bₕ, xmin, xmax, tmin, tmax)
-    td = PlanarVoxelMassEnergyDynamics(nrows, ncols, l, w, xₙ, zₙ, kₘ, kₐ, ρₘ, ρₐ, cₚₘ, cₚₐ, T∞, T₀, wire_diam, h∞, h₀, Tmin, Tmax)
-    pd = NullPropertyDynamics()
-
-    return Process(id, td, pd)
-end
-
 function PlanarLPBF(nrows, ncols, ndeep, l, lz, k, ρ, cₚ, T∞, h∞, σ, Pₘₐₓ, Pₘᵢₙ, vₘₐₓ, Tmax, Tmin, Plim)
     n_voxels = nrows * ncols
 
@@ -222,7 +163,7 @@ function PlanarLPBFPrescribedMotion(nrows, ncols, l, k, ρ, cₚ, T∞, h∞, σ
 
     id = PlanarHeatsourcePrescribedMotionDynamics(nrows, ncols, l, xₙ, zₙ, ρ, cₚ, σ, xmin, xmax, zmin, zmax, tmin, tmax)
     td = PlanarVoxelTemperatureDynamics(nrows, ncols, l, xₙ, zₙ, k, ρ, cₚ, T∞, h∞, Tmax, Tmin)
-    pd = HardnessDynamics(A, τ, n=n_voxels)#FusionDynamics(A, τ; n=n_voxels)
+    pd = HardnessDynamics(A, τ, n=n_voxels)
 
     return Process(id, td, pd)
 end
