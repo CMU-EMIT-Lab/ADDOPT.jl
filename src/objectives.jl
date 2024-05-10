@@ -18,6 +18,7 @@ end
 
 struct QuadraticObjective{MatrixType<:AbstractMatrix} <: Objective
     Q::MatrixType
+    b::Vector{Float64}
     R::MatrixType
     Qf::MatrixType
     x̄::Vector{Float64}
@@ -25,7 +26,7 @@ struct QuadraticObjective{MatrixType<:AbstractMatrix} <: Objective
 end
 
 function cost(o::QuadraticObjective, z, idx)
-    Q, R, Qf, x̄, ū = o.Q, o.R, o.Qf, o.x̄, o.ū
+    Q, b, R, Qf, x̄, ū = o.Q, o.b, o.R, o.Qf, o.x̄, o.ū
     Nx, Nkb, Nkc, Nc, Nu = idx.Nx, idx.Nkb, idx.Nkc, idx.Nc, idx.Nu
 
     cost = 0.0
@@ -40,6 +41,7 @@ function cost(o::QuadraticObjective, z, idx)
             @. ex = xₖ - x̄
             @. eu = uₖ - ū
             cost += 0.5 * (dot(ex, Q, ex) + dot(eu, R, eu))
+            cost += dot(b, ex)
         end
 
         for k in (Nkb[c]+1):(Nkb[c]+Nkc[c])
@@ -49,6 +51,7 @@ function cost(o::QuadraticObjective, z, idx)
 
             if (c < Nc) || (k < Nkb[c] + Nkc[c])
                 cost += 0.5 * (dot(ex, Q, ex))
+                cost += dot(b, ex)
             end
         end
     end
@@ -56,13 +59,13 @@ function cost(o::QuadraticObjective, z, idx)
     xₙ = @view z[idx.x[Nc][end]]
     @. ex = xₙ - x̄
     cost += 0.5 * dot(ex, Qf, ex)
-
+    cost += dot(b, ex)
 
     return cost
 end
 
 function gradient(o::QuadraticObjective, grad, z, idx)
-    Q, R, Qf, x̄, ū = o.Q, o.R, o.Qf, o.x̄, o.ū
+    Q, b, R, Qf, x̄, ū = o.Q, o.b, o.R, o.Qf, o.x̄, o.ū
     Nx, Nkb, Nkc, Nc, Nu = idx.Nx, idx.Nkb, idx.Nkc, idx.Nc, idx.Nu
     grad[:] .= 0
 
@@ -79,6 +82,7 @@ function gradient(o::QuadraticObjective, grad, z, idx)
 
             mul!(view(grad, idx.x[c][k]), Q, ex)
             mul!(view(grad, idx.u[c][k]), R, eu)
+            view(grad, idx.x[c][k]) .+= b
         end
 
         for k in (Nkb[c]+1):(Nkb[c]+Nkc[c])
@@ -88,6 +92,7 @@ function gradient(o::QuadraticObjective, grad, z, idx)
 
             if (c < Nc) || (k < Nkb[c] + Nkc[c])
                 mul!(view(grad, idx.x[c][k]), Q, ex)
+                view(grad, idx.x[c][k]) .+= b
             end
         end
     end
@@ -95,7 +100,7 @@ function gradient(o::QuadraticObjective, grad, z, idx)
     xₙ = @view z[idx.x[Nc][end]]
     @. ex = xₙ - x̄
     mul!(view(grad, idx.x[Nc][end]), Qf, ex)
-
+    view(grad, idx.x[Nc][end]) .+= b
 end
 
 # Hessian structure for diagonal matrices
