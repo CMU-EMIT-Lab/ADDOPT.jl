@@ -6,7 +6,6 @@ include("input_models/planar_heatsource_relaxed.jl")
 include("input_models/planar_heatsource_prescribed.jl")
 include("input_models/gmaw_prescribed.jl")
 include("input_models/gmaw_fully_prescribed.jl")
-include("input_models/gmaw_fully_prescribed_slack.jl")
 include("input_models/null_input.jl")
 
 # Property models
