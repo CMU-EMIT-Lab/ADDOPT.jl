@@ -35,7 +35,7 @@ fig/*
 # Data
 data/*
 ma77_*
-temp/*
+output/*
 
 # VS Code Settings
 .vscode
