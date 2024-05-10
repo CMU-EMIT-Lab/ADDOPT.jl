@@ -193,8 +193,14 @@ mutable struct AdditiveProblem{OB<:Objective,ID<:InputDynamics,TD<:TransferDynam
         end
 
         if !final_constraint
-            xfmin = -Inf * ones(idx.Nx)
-            x̄ = Inf * ones(idx.Nx)
+            xfmin = [state_min(td)
+                property_min(pd)
+                state_min(id)
+                ε_min(td)]
+            x̄ = [state_max(td)
+                property_max(pd)
+                state_max(id)
+                ε_max(td)]
         elseif isnothing(xfmin)
             xfmin = x̄
         end
