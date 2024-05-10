@@ -29,16 +29,21 @@ T₀ = 295.0 # K
 wire_diam = 0.001143 # m, aka 0.045in
 Tₗ = 1784.0 # K, liquidus
 
+nsubs = 2
 nx = 38 #16#20 # down from 23, up from 13
 ny = 3
-nz = 4
+nz = 4 + nsubs
 nvox = nz * ny * nx
 l = 0.002 # m, aka 2mm
+
+fill_substrate = zeros(nx, ny, nz)
+fill_substrate[:, :, 1:nsubs] .= 1
+fill_substrate = vec(fill_substrate)
 
 h₀ = k * 4 / √(π * l * nx * l * ny) # 3400 # W / m^2 K
 
 Nc = 3
-Nkb = [(nx * (1 - (c - 1)/Nc) - 3) * 5 for c in 1:Nc]
+Nkb = [nx * 5 for c in 1:Nc]#[trunc(Int, (nx * (1 - (c - 1)/Nc) - 3) * 5) for c in 1:Nc]
 Nkc = 200
 
 Tmin = T₀
@@ -49,16 +54,16 @@ r_bead = wire_diam * sqrt(67.7 / (2 * 5.3))
 xₙ, yₙ, zₙ = gen_xyz(nx, ny, nz, l)
 
 # # Four layer wall
-# layers = [[[2l; (ny + 1) / 2 * l; 3l - l / 2], [(nx - 1) * l; (ny + 1) / 2 * l; 3l - l / 2]],
-#     [[(nx - 1) * l; (ny + 1) / 2 * l; 4l - l / 2], [2l; (ny + 1) / 2 * l; 4l - l / 2]],
-#     [[2l; (ny + 1) / 2 * l; 5l - l / 2], [(nx - 1) * l; (ny + 1) / 2 * l; 5l - l / 2]],
-#     [[(nx - 1) * l; (ny + 1) / 2 * l; 6l - l / 2], [2l; (ny + 1) / 2 * l; 6l - l / 2]]]
+layers = [[[2l; (ny + 1) / 2 * l; 3l - l / 2], [(nx - 1) * l; (ny + 1) / 2 * l; 3l - l / 2]],
+    [[(nx - 1) * l; (ny + 1) / 2 * l; 4l - l / 2], [2l; (ny + 1) / 2 * l; 4l - l / 2]],
+    [[2l; (ny + 1) / 2 * l; 5l - l / 2], [(nx - 1) * l; (ny + 1) / 2 * l; 5l - l / 2]],
+    [[(nx - 1) * l; (ny + 1) / 2 * l; 6l - l / 2], [2l; (ny + 1) / 2 * l; 6l - l / 2]]]
 
 # Nc layer trapezoid
-layers = [[[2l; (ny + 1) / 2 * l; c*l - l / 2], [(nx * (1 - (c - 1)/Nc) - 1) * l; (ny + 1) / 2 * l; c*l - l / 2]] for c in 1:Nc]
+# layers = [[[2l; (ny + 1) / 2 * l; c*l - l / 2 + nsubs*l], [(nx * (1 - (c - 1)/Nc) - 1) * l; (ny + 1) / 2 * l; c*l - l / 2 + nsubs*l]] for c in 1:Nc]
 
 p̄ = gen_knots(layers, Nkb, Nkc, Nc)
-fill_ref = gen_fill_ref(p̄, xₙ, yₙ, zₙ; radius=r_bead, l=l)
+fill_ref = gen_fill_ref(p̄, xₙ, yₙ, zₙ; radius=r_bead, l=l, x₀=fill_substrate)
 torch_ref = gen_torch_ref(p̄, xₙ, yₙ, zₙ; radius=r_bead, l=l)
 for c in 1:Nc
     for k in (Nkb[c]+1):(Nkb[c]+Nkc)
@@ -69,7 +74,7 @@ end
 
 x̄ = copy(fill_ref)
 display(reshape(x̄[end], (nx, ny, nz)))
-Δr = [norm(p̄[k+1] .- p̄[k]) for k in 1:(Nc * (Nkb + Nkc) - 1)] 
+Δr = vcat([[norm(p̄[kc2zi(k, c, Nkb, Nkc)+1] .- p̄[kc2zi(k, c, Nkb, Nkc)]) for k in 1:(c == Nc ? Nkb[c]+Nkc -1 : Nkb[c]+Nkc)] for c in 1:Nc]...)
 push!(Δr, Δr[end])
 
 process = WAAMHardnessPrescribedMotion(nx, ny, nz, l, k, ρ, cₚ, T∞, T₀, wire_diam, h∞, h₀, hₐᵣ, η, Tmin, Tmax, p̄, A, τ, r_bead, Δr, fill_ref, torch_ref)
@@ -89,7 +94,8 @@ Ei = T∞ * ρ * cₚ * l^3
 
 vox_import = [clamp.(x .- fill_substrate .* 0.9, 0, 1) for x in x̄]
 
-Q = [Diagonal(10 * exp(-2 * (zi / (Nkb + Nkc))) * clamp.(voximp .- 0.99 * ceil.(tr), 0, 1)) for (zi, tr, voximp) in zip(((Nkb+Nkc)*Nc):-1:1, torch_ref, vox_import)]
+zis = vcat([[kc2zi(k, c, Nkb, Nkc) for k in 1:(Nkb[c]+Nkc)] for c in 1:Nc]...)
+Q = [Diagonal(10 * exp(-2 * (zi / (Nkb[end] + Nkc))) * clamp.(voximp .- 0.99 * ceil.(tr), 0, 1)) for (zi, tr, voximp) in zip(reverse(zis), torch_ref, vox_import)]
 Q = [Diagonal([diag(q); 1e5 * diag(q)]) for q in Q]
 Q[end] .*= 10
 x₀ = [x̄[1] .* (ρ * cₚ * l^3 * T∞); zeros(nvox)]
@@ -103,8 +109,8 @@ problem = AdditiveProblem(process, objective, Nkb, Nkc, Nc, x₀, x̄=[400.0 * �
     Δtb_min=0.06, Δtb_max=0.12, # increased min from .04 to limit WFS
     Δtc_min=0.02, Δtc_max=0.40) # increased min from  .005 to .020 to ensure solidification
 
-X0 = [[[(l^3 * ρ * cₚ) * (T∞ + (Tₗ - T∞) * (i < Nkb ? i / Nkb : (Nkc - (i - Nkb)) / Nkc)) * x; zeros(nvox)] for (i, x) in enumerate(x̄[((c-1)*(Nkb+Nkc)+1):(c*(Nkb+Nkc))])] for c in 1:Nc]
-U0 = [[[1.0] for k in 1:Nkb] for c in 1:Nc]
+X0 = [[[(l^3 * ρ * cₚ) * (T∞ + (Tₗ - T∞) * (i < Nkb[c] ? i / Nkb[c] : (Nkc - (i - Nkb[c])) / Nkc)) * x; zeros(nvox)] for (i, x) in enumerate(x̄[((c-1)*(Nkb[c]+Nkc)+1):(c*(Nkb[c]+Nkc))])] for c in 1:Nc]
+U0 = [[[1.0] for k in 1:Nkb[c]] for c in 1:Nc]
 z0 = marshall_z(problem.idx, X0, U0, 0.075, 0.08; free_time=true)
 
 # # baseline
@@ -136,8 +142,8 @@ z0 = marshall_z(problem.idx, X0, U0, 0.075, 0.08; free_time=true)
 # Y_hard = [H₀ .+ ΔH .* (1 .- y) for y in Y_frac]
 # animate_3Dmeasurement_history_planar(Y_hard, fill_ref_sim, Δt_sim, nx, ny, nz; path="animation_ref_waam_hardness_$(ȳ).mp4", strid=slow_fac, quantity="Vickers Hardness", scale=(170, 220), l=2)#300
 
-
-z, X, U, Δt = optimize_trajectory(problem; max_iter=3000, tol=1e-5, c_tol=1.0e-5, z₀=z0, solv="ma97")
+# c = optimize_trajectory(problem; max_iter=3000, tol=1e-5, c_tol=1.0e-5, z₀=z0, solv="ma97")
+J, z, X, U, Δt, λ, μ_xₗ, μ_xᵤ, μ_uₗ, μ_uᵤ = optimize_trajectory(problem; max_iter=3000, tol=1e-5, c_tol=1.0e-5, z₀=z0, solv="ma97")
 t = cumsum(Δt)
 save_object("traj_waam_z_$(ȳ).jld2", z)
 save_object("traj_waam_X_$(ȳ).jld2", X)
