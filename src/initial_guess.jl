@@ -1,34 +1,3 @@
-
-function build_U_wall(id::PlanarGMAWDynamics, Nk, Nc)
-    U = []
-
-    for c in 1:Nc
-        Uc = []
-        for k in 1:Nk
-            push!(Uc, [(1 - 2mod(c + 1, 2)) * 0.0059; 0.0015 * (c - 1); 1.0; 0.0677]) # vx, vz, trim, WFS
-        end
-
-        push!(U, Uc)
-    end
-
-    return U
-end
-
-function build_U_wall(id::PlanarGMAWDynamicsPrescribed, Nk, Nc)
-    U = []
-
-    for c in 1:Nc
-        Uc = []
-        for k in 1:Nk
-            push!(Uc, [0.0677]) # vx, vz, trim, WFS
-        end
-
-        push!(U, Uc)
-    end
-
-    return U
-end
-
 function build_U_wall(id::GMAWDynamicsPrescribed, Nk, Nc)
     U = []
 
