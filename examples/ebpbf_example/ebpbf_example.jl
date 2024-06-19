@@ -20,15 +20,15 @@ nₕ = sum(mask)
 # Machine parameters
 σ = 250e-6 / 2.355 # Spot diameter, m #250e-6
 ω = 2π * 178.446e3 # 1/s
-Pₛₑₜ = 3000.0e-3 # kW
+Pₛₑₜ = 400.0e-3 # kW
 
 # Material parameters, taken at the solidus
-k = 31.1 # W / mK 
-ρ = 7269.0 # kg / m^3 
-cₚ = 720.0 # J / kg K, aka kJ / kg kK 
+k = 100.2 # W / mK 
+ρ = 2572.0 # kg / m^3 
+cₚ = 1204.0 # J / kg K, aka kJ / kg kK 
 
-Tₛ = (1385.0 + 273.15) * 1e-3 # kK, solidus 
-Tₗ = (1450.0 + 273.15) * 1e-3 # kK, liquidus
+Tₛ = (775) * 1e-3 # kK, solidus 
+Tₗ = (1000) * 1e-3 # kK, liquidus
 Tₘ = (Tₛ + Tₗ) / 2 # kK, melting 
 Tboil = 3000.0e-3 # kK, boiling 
 
@@ -41,17 +41,17 @@ nvox = nsvox * ndeep
 nvox_fine = nvox * n_refine^2
 mask = vcat(mask, zeros(Bool, nsvox * (ndeep - 1)))
 mask_fine = vcat(mask_fine, zeros(Bool, nsvox_fine * (ndeep - 1)))
-l = 400e-6 # m
-lz = 300e-6 # m
+l = 200e-6 # m
+lz = 200e-6 # m
 ncols_fine = ncols * n_refine
 nrows_fine = nrows * n_refine
 @show nsvox
 # Environment parameters
-T∞ = (20.0 + 273.15) * 1e-3 # kK
+T∞ = (700) * 1e-3 # kK
 h∞ = 0.0 # W / m^2 K (Vacuum)
 
 Tmax = Tboil * ones(nvox)
-Tmax[.!mask] .= Tₛ - 25e-3
+Tmax[.!mask] .= Tₛ# - 25e-3
 process = PlanarLPBF(nrows, ncols, ndeep, l, lz, k, ρ, cₚ, T∞, h∞, σ, Pₛₑₜ, Pₛₑₜ, ω, Tmax, 200.0e-3, Inf * mask[1:nsvox])
 process_fine = PlanarLPBF(nrows_fine, ncols_fine, ndeep, l / n_refine, lz, k, ρ, cₚ, T∞, h∞, σ, Pₛₑₜ, Pₛₑₜ, ω, Tmax, 200.0e-3, Inf * mask[1:nsvox])
 
@@ -66,16 +66,17 @@ ū = zeros(nsvox)
 Q = (diagm(mask) - (1 / nₕ) * (mask * mask'))' * (diagm(mask) - (1 / nₕ) * (mask * mask')) / nₕ
 R = zeros(nsvox, nsvox)
 Qf = Q
-objective = QuadraticObjective(Q, R, Qf, x̄, ū)
+b = zeros(nvox)
+objective = QuadraticObjective(Q, b, R, Qf, x̄, ū)
 
 Nkc = 20
 Nc = 1
-Δtb = 1000e-6 # s, aka 500μs 1000 for 31 
-Δtc = 1000e-6 # s, aka 500μs 1000 for 31
+Δtb = 100e-6 # s 
+Δtc = 100e-6 # s
 
 T_melt = Tₗ + 30.0e-3
 u0 = mask[1:nsvox] ./ sum(mask) * process.input_dynamics.Pₘₐₓ
-Nkb, U0, X0 = initial_guess(process, mask, x₀, Nkc, Δtb, Δtc, T_melt + 100e-3, u0) #increase superheat requirement
+Nkb, U0, X0 = initial_guess(process, mask, x₀, Nkc, Δtb, Δtc, T_melt + 0e-3, u0) #increase superheat requirement
 @show Nkb
 
 surface_scaled(X; nsvox=nsvox) = [x[1:nsvox] .* 1e3 for x in X]
@@ -86,11 +87,11 @@ boxconstraints = [(1, Nkb, T_melt * mask, Tmax),]
 problem = AdditiveProblem(process, objective, Nkb, Nkc, Nc, x₀, xfmin=T_melt * mask, x̄=Tmax, Δtb=Δtb, Δtc=Δtc, final_constraint=false, hessian=true, boxconstraints=boxconstraints)
 z0 = marshall_z(problem.idx, X0, U0, Δtb, Δtc)
 
-# z, X, U, Δt, λ = optimize_trajectory(problem; max_iter=10_000, z₀=z0, solv="ma97", isqp=true)
-# save_object("traj_lpbf_ebpbf_$(run_num)_opt.jld2", (z, X, U, Δt, λ))
-# GC.gc()
+J, z, X, U, Δt, λ, μ_xₗ, μ_xᵤ, μ_uₗ, μ_uᵤ = optimize_trajectory(problem; max_iter=10_000, z₀=z0, solv="ma97", isqp=true)
+save_object("traj_lpbf_ebpbf_$(run_num)_opt.jld2", (z, X, U, Δt, λ))
+GC.gc()
 
-z, X, U, Δt, λ = load_object("traj_lpbf_ebpbf_$(run_num)_opt.jld2")
+# z, X, U, Δt, λ = load_object("traj_lpbf_ebpbf_$(run_num)_opt.jld2")
 
 t = (cumsum(Δt) .- Δt[1]) .* 1e3
 xₙ = process.input_dynamics.xₙ
