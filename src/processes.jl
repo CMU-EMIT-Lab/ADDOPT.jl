@@ -30,7 +30,7 @@ end
 function Furnace(Pₘₐₓ, T∞, Tₘₐₓ, h, m, cₚ)
     id = UniformPowerDynamics(Pₘₐₓ, m, cₚ)
     td = NewtonLumpedDynamics(h, T∞, m, cₚ, Tₘₐₓ)
-    pd = HardnessDynamics(1e4, 9625)
+    pd = HardnessDynamics(38.005, 0.051590, 240.24)
 
     return Process(id, td, pd)
 end
@@ -100,7 +100,7 @@ function WAAMHardnessPrescribedMotion(nx, ny, nz, l, k, ρ, cₚ, T∞, T₀, wi
 
     id = GMAWDynamicsFullyPrescribed(nx, ny, nz, l, xₙ, yₙ, zₙ, ρ, cₚ, T∞, Tₗ, wire_diam, h∞, h₀, hₐᵣ, η, r_bead, Δr, p̄, xtorch)
     td = VoxelEnergyDynamics(nx, ny, nz, l, xₙ, yₙ, zₙ, k, ρ, cₚ, T∞, T₀, wire_diam, h∞, h₀, Tmin, Tmax, xfill)
-    pd = HardnessDynamics(A, τ, n=n_voxels)
+    pd = HardnessDynamics(38.005, 0.051590, 240.24, num=n_voxels)
 
     return Process(id, td, pd)
 end
@@ -110,7 +110,7 @@ function WAAMHardnessPrescribedTemp(nvox, Y, A1, τ1, A2, τ2)
 
     id = NullInputDynamics()
     td = VoxelPrescribedTemperatureDynamics(Y)
-    pd = HardnessDynamics(A1, τ1, A2, τ2, n=nvox)
+    pd = HardnessDynamics(38.005, 0.051590, 240.24, num=nvox)
 
     return Process(id, td, pd)
 end
@@ -122,7 +122,7 @@ function WAAMHardnessCooling(nx, ny, nz, l, k, ρ, cₚ, T∞, T₀, wire_diam, 
 
     id = NullInputDynamics()
     td = VoxelEnergyDynamics(nx, ny, nz, l, xₙ, yₙ, zₙ, k, ρ, cₚ, T∞, T₀, wire_diam, h∞, h₀, Tmin, Tmax, x)
-    pd = HardnessDynamics(A, τ, n=n_voxels)
+    pd = HardnessDynamics(38.005, 0.051590, 240.24, num=n_voxels)
 
     return Process(id, td, pd)
 end
@@ -162,7 +162,7 @@ function PlanarLPBFPrescribedMotion(nrows, ncols, l, k, ρ, cₚ, T∞, h∞, σ
 
     id = PlanarHeatsourcePrescribedMotionDynamics(nrows, ncols, l, xₙ, zₙ, ρ, cₚ, σ, xmin, xmax, zmin, zmax, tmin, tmax)
     td = PlanarVoxelTemperatureDynamics(nrows, ncols, l, xₙ, zₙ, k, ρ, cₚ, T∞, h∞, Tmax, Tmin)
-    pd = HardnessDynamics(A, τ, n=n_voxels)
+    pd = HardnessDynamics(38.005, 0.051590, 240.24, num=n_voxels)
 
     return Process(id, td, pd)
 end
