@@ -156,6 +156,7 @@ mutable struct AdditiveProblem{OB<:Objective,ID<:InputDynamics,TD<:TransferDynam
     boxconstraints::Vector{Tuple{Int,Int,Vector{Float64},Vector{Float64}}}
 
     obj_hess_len::Int
+    isqp::Bool
 
     function AdditiveProblem(process::Process{ID,TD,PD}, objective::OB,
         Nkb, Nkc, Nc, x₀; x̄=nothing, Δtb=nothing, Δtc=nothing, final_constraint=false, hessian=true, ximin=nothing, xfmin=nothing,
@@ -216,7 +217,7 @@ mutable struct AdditiveProblem{OB<:Objective,ID<:InputDynamics,TD<:TransferDynam
             cp,
             Δtb_min, Δtb_max,
             Δtc_min, Δtc_max,
-            boxconstraints, 0)
+            boxconstraints, 0, false)
     end
 end
 
@@ -995,7 +996,10 @@ end
 function MOI.hessian_lagrangian_structure(prob::AdditiveProblem)
     structure = objective_hessian_structure(prob.objective, prob.idx)
     prob.obj_hess_len = length(structure)
-    append!(structure, constraint_hessian_structure(prob))
+
+    if !prob.isqp
+        append!(structure, constraint_hessian_structure(prob))
+    end
 
     return structure
 end
@@ -1004,7 +1008,9 @@ function MOI.eval_hessian_lagrangian(prob::AdditiveProblem, H, z, σ, μ)
     objective_hessian_values(prob.objective, prob.idx, H, z)
     H[1:prob.obj_hess_len] .*= σ
 
-    constraint_hessian_values(prob, (@view H[(prob.obj_hess_len+1):end]), z, μ)
+    if !prob.isqp
+        constraint_hessian_values(prob, (@view H[(prob.obj_hess_len+1):end]), z, μ)
+    end
 end
 
 function MOI.features_available(prob::AdditiveProblem)
@@ -1034,6 +1040,7 @@ function optimize_trajectory(problem::AdditiveProblem;
         solver.options["jac_d_constant"] = "yes"
     end
 
+    problem.isqp = isqp
     idx = problem.idx
     Nz, Nconstr = idx.Nz, idx.Nconstr
     Nx, Neq, Nineq = idx.Nx, idx.Neq, idx.Nineq
