@@ -10,7 +10,7 @@ import HSL_jll
 
 export AdditiveProblem, optimize_trajectory
 export Furnace, FurnaceSimple
-export PlanarLPBF, PlanarLPBFPrescribedMotion
+export PlanarLPBF, PlanarLPBFPrescribedMotion, PlanarLPBFHardness
 export WAAMPrescribedMotion, WAAMHardnessPrescribedMotion, WAAMHardnessPrescribedTemp
 export WAAMHardnessPrescribedMotionSlack
 export QuadraticObjective, TimeWeightedQuadraticObjective

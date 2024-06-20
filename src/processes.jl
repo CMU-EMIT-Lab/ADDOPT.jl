@@ -146,6 +146,25 @@ function PlanarLPBF(nrows, ncols, ndeep, l, lz, k, ρ, cₚ, T∞, h∞, σ, P�
     return Process(id, td, pd)
 end
 
+function PlanarLPBFHardness(nrows, ncols, ndeep, l, lz, k, ρ, cₚ, T∞, h∞, σ, Pₘₐₓ, Pₘᵢₙ, vₘₐₓ, Tmax, Tmin, Plim)
+    n_voxels = nrows * ncols
+
+    # Generate x-z matrix/vector
+    rc(idx) = row_col(nrows, ncols, idx)
+    x = rc.(1:n_voxels)
+    x = l .* vcat(collect.(x)'...)
+    reverse!(x, dims=2)
+
+    xₙ = x[:, 1]
+    zₙ = x[:, 2]
+
+    id = PlanarHeatsourceDynamics(nrows, ncols, ndeep, l, lz, xₙ, zₙ, Pₘₐₓ, Pₘᵢₙ, ρ, cₚ, σ, vₘₐₓ, Plim)
+    td = PlanarVoxelTemperatureDynamics(nrows, ncols, ndeep, l, lz, xₙ, zₙ, k, ρ, cₚ, T∞, h∞, Tmax, Tmin)
+    pd = HardnessDynamics(38.005, 0.051590, 240.24, num=n_voxels)
+
+    return Process(id, td, pd)
+end
+
 function PlanarLPBFPrescribedMotion(nrows, ncols, l, k, ρ, cₚ, T∞, h∞, σ, xmin, xmax, zmin, zmax, tmin, tmax, Tmax, Tmin)
     n_voxels = nrows * ncols
     A = 1e4
