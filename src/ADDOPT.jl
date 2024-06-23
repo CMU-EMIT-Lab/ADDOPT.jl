@@ -6,7 +6,7 @@ using LinearAlgebra, ForwardDiff
 using Symbolics, SparseArrays, SparseDiffTools
 using SparseArrays: findnz, nnz, nonzeros
 const MOI = MathOptInterface
-import HSL_jll
+using HSL_jll: HSL_jll
 
 export AdditiveProblem, optimize_trajectory
 export Furnace, FurnaceSimple
@@ -85,16 +85,18 @@ include("transpiler.jl")
 include("approximator.jl")
 
 struct CachePackage
-    fₖ_cache::Dict{Tuple{DataType,Int},Any}
-    fₖ₊₁_cache::Dict{Tuple{DataType,Int},Any}
-    fₘ_cache::Dict{Tuple{DataType,Int},Any}
-    xₘ_cache::Dict{Tuple{DataType,Int},Any}
-    ẋₘ_cache::Dict{Tuple{DataType,Int},Any}
+    fₖ_cache::Dict{Tuple{DataType, Int}, Any}
+    fₖ₊₁_cache::Dict{Tuple{DataType, Int}, Any}
+    fₘ_cache::Dict{Tuple{DataType, Int}, Any}
+    xₘ_cache::Dict{Tuple{DataType, Int}, Any}
+    ẋₘ_cache::Dict{Tuple{DataType, Int}, Any}
     fₖ_cache_lock::Threads.SpinLock
     fₖ₊₁_cache_lock::Threads.SpinLock
     fₘ_cache_lock::Threads.SpinLock
     xₘ_cache_lock::Threads.SpinLock
     ẋₘ_cache_lock::Threads.SpinLock
+    J_cache::Dict{Tuple{DataType, Int, Int}, Any}
+    r_cache::Dict{Tuple{DataType, Int}, Any}
 end
 
 struct ProblemIndex
@@ -126,17 +128,19 @@ struct ProblemIndex
     free_cool_time::Bool
 end
 
-mutable struct AdditiveProblem{OB<:Objective,ID<:InputDynamics,TD<:TransferDynamics,PD<:PropertyDynamics} <: MOI.AbstractNLPEvaluator
-    process::Process{ID,TD,PD}
+mutable struct AdditiveProblem{OB <: Objective, ID <: InputDynamics, TD <: TransferDynamics, PD <: PropertyDynamics} <: MOI.AbstractNLPEvaluator
+    process::Process{ID, TD, PD}
     objective::OB
 
-    Δtb::Union{Real,Nothing}
-    Δtc::Union{Real,Nothing}
+    Δtb::Union{Real, Nothing}
+    Δtc::Union{Real, Nothing}
 
-    constraint_jacobian_sparsity
+    constraint_jacobian_sparsity::Any
+    hessian_lagrangian_sparsity::Any
 
     idx::ProblemIndex
-    sparsity_cache
+    sparsity_cache::Any
+    hess_sparsity_cache::Any
 
     x₀::Vector{Float64}
     ximin::Vector{Float64}
@@ -153,18 +157,18 @@ mutable struct AdditiveProblem{OB<:Objective,ID<:InputDynamics,TD<:TransferDynam
     Δtc_min::Float64
     Δtc_max::Float64
 
-    boxconstraints::Vector{Tuple{Int,Int,Vector{Float64},Vector{Float64}}}
+    boxconstraints::Vector{Tuple{Int, Int, Vector{Float64}, Vector{Float64}}}
 
     obj_hess_len::Int
     isqp::Bool
 
-    function AdditiveProblem(process::Process{ID,TD,PD}, objective::OB,
-        Nkb, Nkc, Nc, x₀; x̄=nothing, Δtb=nothing, Δtc=nothing, final_constraint=false, hessian=true, ximin=nothing, xfmin=nothing,
-        boxconstraints=nothing,
-        Δtb_min=0.01,
-        Δtb_max=0.04,
-        Δtc_min=0.01,
-        Δtc_max=0.04) where {OB<:Objective,ID<:InputDynamics,TD<:TransferDynamics,PD<:PropertyDynamics}
+    function AdditiveProblem(process::Process{ID, TD, PD}, objective::OB,
+        Nkb, Nkc, Nc, x₀; x̄ = nothing, Δtb = nothing, Δtc = nothing, final_constraint = false, hessian = true, ximin = nothing, xfmin = nothing,
+        boxconstraints = nothing,
+        Δtb_min = 0.01,
+        Δtb_max = 0.04,
+        Δtc_min = 0.01,
+        Δtc_max = 0.04) where {OB <: Objective, ID <: InputDynamics, TD <: TransferDynamics, PD <: PropertyDynamics}
         id, td, pd = process.input_dynamics, process.transfer_dynamics, process.property_dynamics
         idx = generate_z_indices(
             typeof(Nkb) == Int ? Nkb * ones(Int, Nc) : Nkb,
@@ -172,21 +176,23 @@ mutable struct AdditiveProblem{OB<:Objective,ID<:InputDynamics,TD<:TransferDynam
             Nc, Nu(id), Nr(id), Ns(td), Nα(pd), Nε(td), Nc_eq(id), Nc_ineq(id), Nc_ε(td),
             isnothing(Δtb), isnothing(Δtc))
 
-        fₖ_cache = Dict{Tuple{DataType,Int},Any}()
-        fₖ₊₁_cache = Dict{Tuple{DataType,Int},Any}()
-        fₘ_cache = Dict{Tuple{DataType,Int},Any}()
-        xₘ_cache = Dict{Tuple{DataType,Int},Any}()
-        ẋₘ_cache = Dict{Tuple{DataType,Int},Any}()
+        fₖ_cache = Dict{Tuple{DataType, Int}, Any}()
+        fₖ₊₁_cache = Dict{Tuple{DataType, Int}, Any}()
+        fₘ_cache = Dict{Tuple{DataType, Int}, Any}()
+        xₘ_cache = Dict{Tuple{DataType, Int}, Any}()
+        ẋₘ_cache = Dict{Tuple{DataType, Int}, Any}()
+        J_cache = Dict{Tuple{DataType, Int, Int}, Any}()
+        r_cache = Dict{Tuple{DataType, Int}, Any}()
         fₖ_cache_lock = Threads.SpinLock()
         fₖ₊₁_cache_lock = Threads.SpinLock()
         fₘ_cache_lock = Threads.SpinLock()
         xₘ_cache_lock = Threads.SpinLock()
         ẋₘ_cache_lock = Threads.SpinLock()
-        cp = CachePackage(fₖ_cache, fₖ₊₁_cache, fₘ_cache, xₘ_cache, ẋₘ_cache, fₖ_cache_lock, fₖ₊₁_cache_lock, fₘ_cache_lock, xₘ_cache_lock, ẋₘ_cache_lock)
+        cp = CachePackage(fₖ_cache, fₖ₊₁_cache, fₘ_cache, xₘ_cache, ẋₘ_cache, fₖ_cache_lock, fₖ₊₁_cache_lock, fₘ_cache_lock, xₘ_cache_lock, ẋₘ_cache_lock, J_cache, r_cache)
 
         println("Preparing sparsity")
 
-        con_jacobian_sparsity, sparsity_cache = constraint_jacobian_sparsity(idx, process, cp; Δtb=Δtb, Δtc=Δtc)
+        con_jacobian_sparsity, sparsity_cache = constraint_jacobian_sparsity(idx, process, cp; Δtb = Δtb, Δtc = Δtc)
         println("Done with sparsity")
 
         if isnothing(ximin)
@@ -210,8 +216,8 @@ mutable struct AdditiveProblem{OB<:Objective,ID<:InputDynamics,TD<:TransferDynam
             boxconstraints = []
         end
 
-        new{OB,ID,TD,PD}(process, objective, Δtb, Δtc, con_jacobian_sparsity,
-            idx, sparsity_cache,
+        new{OB, ID, TD, PD}(process, objective, Δtb, Δtc, con_jacobian_sparsity, nothing,
+            idx, sparsity_cache, nothing,
             x₀, ximin, x̄, xfmin,
             final_constraint, hessian,
             cp,
@@ -251,9 +257,11 @@ function generate_z_indices(Nkb, Nkc, Nc, Nu, Nr, Ns, Nα, Nε, Neq, Nineq, Nc_�
             i += Nx
             push!(u_cyc, i:(i-1+Nu))
             i += Nu
+            if free_cool_time
+                push!(Δtc_cyc, i)
+            end
             if free_build_time
                 push!(Δtb_cyc, i)
-                push!(Δtc_cyc, i)
                 i += NΔtb
             end
 
@@ -295,7 +303,7 @@ function generate_z_indices(Nkb, Nkc, Nc, Nu, Nr, Ns, Nα, Nε, Neq, Nineq, Nc_�
         free_build_time, free_cool_time)
 end
 
-function combined_dynamics!(f, x, u, process::Process{ID,TD,PD}, t, zi, Δt) where {ID,TD,PD}
+function combined_dynamics!(f, x, u, process::Process{ID, TD, PD}, t, zi, Δt) where {ID, TD, PD}
     td, pd, id = process.transfer_dynamics, process.property_dynamics, process.input_dynamics
 
     s = view(x, 1:Ns(td))
@@ -312,7 +320,7 @@ function combined_dynamics!(f, x, u, process::Process{ID,TD,PD}, t, zi, Δt) whe
     dynamics_function!(id, dr, s, r, u, t, zi)
 end
 
-function collocation_constraint!(process::Process{ID,TD,PD}, r::AbstractVector{T}, xₖ, uₖ, xₖ₊₁, Δt, t, zi, cp::CachePackage) where {T,ID,TD,PD}
+function collocation_constraint!(process::Process{ID, TD, PD}, r::AbstractVector{T}, xₖ, uₖ, xₖ₊₁, Δt, t, zi, cp::CachePackage) where {T, ID, TD, PD}
     Ncolloc = length(r)
 
     fₖ_cache = cp.fₖ_cache
@@ -352,7 +360,7 @@ function collocation_constraint!(process::Process{ID,TD,PD}, r::AbstractVector{T
     r .= fₘ .- ẋₘ
 end
 
-function equality_constraint!(process::Process{ID,TD,PD}, r::AbstractVector{T}, xₖ, uₖ, t, zi) where {T,ID,TD,PD}
+function equality_constraint!(process::Process{ID, TD, PD}, r::AbstractVector{T}, xₖ, uₖ, t, zi) where {T, ID, TD, PD}
     ns = Ns(process.transfer_dynamics)
     nα = Nα(process.property_dynamics)
     nr = Nr(process.input_dynamics)
@@ -361,7 +369,7 @@ function equality_constraint!(process::Process{ID,TD,PD}, r::AbstractVector{T}, 
     equality_constraint!(process.input_dynamics, r, rₖ, uₖ, t, zi)
 end
 
-function inequality_constraint!(process::Process{ID,TD,PD}, r::AbstractVector{T}, xₖ, uₖ, t, zi) where {T,ID,TD,PD}
+function inequality_constraint!(process::Process{ID, TD, PD}, r::AbstractVector{T}, xₖ, uₖ, t, zi) where {T, ID, TD, PD}
     ns = Ns(process.transfer_dynamics)
     nα = Nα(process.property_dynamics)
     nr = Nr(process.input_dynamics)
@@ -370,7 +378,7 @@ function inequality_constraint!(process::Process{ID,TD,PD}, r::AbstractVector{T}
     inequality_constraint!(process.input_dynamics, r, rₖ, uₖ, t, zi)
 end
 
-function total_build_constraint!(process::Process{ID,TD,PD}, idx::ProblemIndex, r::AbstractVector{T}, xₖ, uₖ, xₖ₊₁, uₖ₊₁, Δt, t, zi, cp::CachePackage) where {T,ID,TD,PD}
+function total_build_constraint!(process::Process{ID, TD, PD}, idx::ProblemIndex, r::AbstractVector{T}, xₖ, uₖ, xₖ₊₁, uₖ₊₁, Δt, t, zi, cp::CachePackage) where {T, ID, TD, PD}
     Nx, Ncolloc, Neq, Nineq = idx.Nx, idx.Ncolloc, idx.Neq, idx.Nineq
     Nc_ε = idx.Nc_ε
     r_colloc = view(r, 1:Ncolloc)
@@ -388,7 +396,7 @@ function total_build_constraint!(process::Process{ID,TD,PD}, idx::ProblemIndex, 
     compatibility_constraint!(process.transfer_dynamics, r_ε, εₖ₊₁, εₖ, sₖ₊₁)
 end
 
-function total_cooling_constraint!(process::Process{ID,TD,PD}, idx::ProblemIndex, r::AbstractVector{T}, xₖ, xₖ₊₁, Δt, t, zi, cp::CachePackage) where {T,ID,TD,PD}
+function total_cooling_constraint!(process::Process{ID, TD, PD}, idx::ProblemIndex, r::AbstractVector{T}, xₖ, xₖ₊₁, Δt, t, zi, cp::CachePackage) where {T, ID, TD, PD}
     Nx, Ncolloc = idx.Nx, idx.Ncolloc
     Nc_ε = idx.Nc_ε
     r_colloc = view(r, 1:Ncolloc)
@@ -403,7 +411,7 @@ function total_cooling_constraint!(process::Process{ID,TD,PD}, idx::ProblemIndex
     compatibility_constraint!(process.transfer_dynamics, r_ε, εₖ₊₁, εₖ, sₖ₊₁)
 end
 
-function constraints!(process::Process, c, z, idx::ProblemIndex, cp::CachePackage; xf=nothing, Δtb=nothing, Δtc=nothing)
+function constraints!(process::Process, c, z, idx::ProblemIndex, cp::CachePackage; xf = nothing, Δtb = nothing, Δtc = nothing)
     # Collocation, Initial state, Final State
     Nc, Nkb, Nkc = idx.Nc, idx.Nkb, idx.Nkc
     free_build_time = isnothing(Δtb)
@@ -475,10 +483,25 @@ function constraints!(process::Process, c, z, idx::ProblemIndex, cp::CachePackag
     end
 end
 
-function constraint_jacobian!(process::Process, jac, z, idx::ProblemIndex, sparsity_cache, cp::CachePackage; Δtb=nothing, Δtc=nothing, final_constraint=false, prob=nothing)
+function constraint_jacobian!(process::Process, jac, z, idx::ProblemIndex, sparsity_cache, cp::CachePackage; Δtb = nothing, Δtc = nothing, final_constraint = false, prob = nothing)
     Nc, Nkb, Nkc = idx.Nc, idx.Nkb, idx.Nkc
 
-    conb_∂xₖ_sparsity, conb_∂uₖ_sparsity, conb_∂xₖ₊₁_sparsity, conb_∂uₖ₊₁_sparsity, conb_∂Δt_sparsity, conc_∂xₖ_sparsity, conc_∂xₖ₊₁_sparsity, conc_∂Δt_sparsity, conb_∂uₖ_color, conb_∂xₖ_color, conb_∂xₖ₊₁_color, conb_∂uₖ₊₁_color, conb_∂Δt_color, conc_∂xₖ_color, conc_∂xₖ₊₁_color, conc_∂Δt_color, jac_cache_conb_∂Δt, jac_cache_conb_∂xₖ, jac_cache_conb_∂uₖ, jac_cache_conb_∂xₖ₊₁, jac_cache_conb_∂uₖ₊₁, jac_cache_conc_∂Δt, jac_cache_conc_∂xₖ, jac_cache_conc_∂xₖ₊₁ = sparsity_cache
+    conb_∂xₖ_sparsity,
+    conb_∂uₖ_sparsity,
+    conb_∂xₖ₊₁_sparsity,
+    conb_∂uₖ₊₁_sparsity,
+    conb_∂Δt_sparsity,
+    conc_∂xₖ_sparsity,
+    conc_∂xₖ₊₁_sparsity,
+    conc_∂Δt_sparsity,
+    jac_cache_conb_∂Δt,
+    jac_cache_conb_∂xₖ,
+    jac_cache_conb_∂uₖ,
+    jac_cache_conb_∂xₖ₊₁,
+    jac_cache_conb_∂uₖ₊₁,
+    jac_cache_conc_∂Δt,
+    jac_cache_conc_∂xₖ,
+    jac_cache_conc_∂xₖ₊₁ = sparsity_cache
     free_build_time = isnothing(Δtb)
     free_cool_time = isnothing(Δtc)
 
@@ -638,7 +661,7 @@ function constraint_jacobian!(process::Process, jac, z, idx::ProblemIndex, spars
 
 end
 
-function constraint_jacobian_sparsity(idx::ProblemIndex, process::Process, cp::CachePackage; Δtb=nothing, Δtc=nothing)
+function constraint_jacobian_sparsity(idx::ProblemIndex, process::Process, cp::CachePackage; Δtb = nothing, Δtc = nothing)
     Nx, Nu = idx.Nx, idx.Nu
     Nkb, Nkc, Nc = idx.Nkb, idx.Nkc, idx.Nc
     Nconb, Nconc = idx.Nconb, idx.Nconc
@@ -694,283 +717,330 @@ function constraint_jacobian_sparsity(idx::ProblemIndex, process::Process, cp::C
     t = 0.0
     zi = 1
 
-    jac_cache_conb_∂Δt = ForwardColorJacCache((r, X) -> total_build_constraint!(process, idx, r, xₖ, uₖ, xₖ₊₁, uₖ₊₁, X, t, zi, cp), Δt, nothing; dx=dxb, colorvec=conb_∂Δt_color, sparsity=conb_∂Δt_sparsity)
-    jac_cache_conb_∂xₖ = ForwardColorJacCache((r, X) -> total_build_constraint!(process, idx, r, X, uₖ, xₖ₊₁, uₖ₊₁, Δt, t, zi, cp), xₖ, nothing; dx=dxb, colorvec=conb_∂xₖ_color, sparsity=conb_∂xₖ_sparsity)
-    jac_cache_conb_∂uₖ = ForwardColorJacCache((r, X) -> total_build_constraint!(process, idx, r, xₖ, X, xₖ₊₁, uₖ₊₁, Δt, t, zi, cp), uₖ, nothing; dx=dxb, colorvec=conb_∂uₖ_color, sparsity=conb_∂uₖ_sparsity)
-    jac_cache_conb_∂xₖ₊₁ = ForwardColorJacCache((r, X) -> total_build_constraint!(process, idx, r, xₖ, uₖ, X, uₖ₊₁, Δt, t, zi, cp), xₖ₊₁, nothing; dx=dxb, colorvec=conb_∂xₖ₊₁_color, sparsity=conb_∂xₖ₊₁_sparsity)
-    jac_cache_conb_∂uₖ₊₁ = ForwardColorJacCache((r, X) -> total_build_constraint!(process, idx, r, xₖ, uₖ, xₖ₊₁, X, Δt, t, zi, cp), uₖ₊₁, nothing; dx=dxb, colorvec=conb_∂uₖ₊₁_color, sparsity=conb_∂uₖ₊₁_sparsity)
-    jac_cache_conc_∂Δt = ForwardColorJacCache((r, X) -> total_cooling_constraint!(process, idx, r, xₖ, xₖ₊₁, X, t, zi, cp), Δt, nothing; dx=dxc, colorvec=conc_∂Δt_color, sparsity=conc_∂Δt_sparsity)
-    jac_cache_conc_∂xₖ = ForwardColorJacCache((r, X) -> total_cooling_constraint!(process, idx, r, X, xₖ₊₁, Δt, t, zi, cp), xₖ, nothing; dx=dxc, colorvec=conc_∂xₖ_color, sparsity=conc_∂xₖ_sparsity)
-    jac_cache_conc_∂xₖ₊₁ = ForwardColorJacCache((r, X) -> total_cooling_constraint!(process, idx, r, xₖ, X, Δt, t, zi, cp), xₖ₊₁, nothing; dx=dxc, colorvec=conc_∂xₖ₊₁_color, sparsity=conc_∂xₖ₊₁_sparsity)
+    jac_cache_conb_∂Δt   = ForwardColorJacCache((r, X) -> total_build_constraint!(process, idx, r, xₖ, uₖ, xₖ₊₁, uₖ₊₁, X, t, zi, cp), Δt, nothing; dx = dxb, colorvec = conb_∂Δt_color, sparsity = conb_∂Δt_sparsity)
+    jac_cache_conb_∂xₖ   = ForwardColorJacCache((r, X) -> total_build_constraint!(process, idx, r, X, uₖ, xₖ₊₁, uₖ₊₁, Δt, t, zi, cp), xₖ, nothing; dx = dxb, colorvec = conb_∂xₖ_color, sparsity = conb_∂xₖ_sparsity)
+    jac_cache_conb_∂uₖ   = ForwardColorJacCache((r, X) -> total_build_constraint!(process, idx, r, xₖ, X, xₖ₊₁, uₖ₊₁, Δt, t, zi, cp), uₖ, nothing; dx = dxb, colorvec = conb_∂uₖ_color, sparsity = conb_∂uₖ_sparsity)
+    jac_cache_conb_∂xₖ₊₁ = ForwardColorJacCache((r, X) -> total_build_constraint!(process, idx, r, xₖ, uₖ, X, uₖ₊₁, Δt, t, zi, cp), xₖ₊₁, nothing; dx = dxb, colorvec = conb_∂xₖ₊₁_color, sparsity = conb_∂xₖ₊₁_sparsity)
+    jac_cache_conb_∂uₖ₊₁ = ForwardColorJacCache((r, X) -> total_build_constraint!(process, idx, r, xₖ, uₖ, xₖ₊₁, X, Δt, t, zi, cp), uₖ₊₁, nothing; dx = dxb, colorvec = conb_∂uₖ₊₁_color, sparsity = conb_∂uₖ₊₁_sparsity)
+    jac_cache_conc_∂Δt   = ForwardColorJacCache((r, X) -> total_cooling_constraint!(process, idx, r, xₖ, xₖ₊₁, X, t, zi, cp), Δt, nothing; dx = dxc, colorvec = conc_∂Δt_color, sparsity = conc_∂Δt_sparsity)
+    jac_cache_conc_∂xₖ   = ForwardColorJacCache((r, X) -> total_cooling_constraint!(process, idx, r, X, xₖ₊₁, Δt, t, zi, cp), xₖ, nothing; dx = dxc, colorvec = conc_∂xₖ_color, sparsity = conc_∂xₖ_sparsity)
+    jac_cache_conc_∂xₖ₊₁ = ForwardColorJacCache((r, X) -> total_cooling_constraint!(process, idx, r, xₖ, X, Δt, t, zi, cp), xₖ₊₁, nothing; dx = dxc, colorvec = conc_∂xₖ₊₁_color, sparsity = conc_∂xₖ₊₁_sparsity)
 
-    total_structure = Vector{Tuple{Int,Int}}()
+    total_structure = Vector{Tuple{Int, Int}}()
     row_offset = 0
+
+    r_conb_∂Δt, c_conb_∂Δt, _     = findnz(conb_∂Δt_sparsity)
+    r_conb_∂xₖ, c_conb_∂xₖ, _     = findnz(conb_∂xₖ_sparsity)
+    r_conb_∂uₖ, c_conb_∂uₖ, _     = findnz(conb_∂uₖ_sparsity)
+    r_conb_∂xₖ₊₁, c_conb_∂xₖ₊₁, _ = findnz(conb_∂xₖ₊₁_sparsity)
+    r_conb_∂uₖ₊₁, c_conb_∂uₖ₊₁, _ = findnz(conb_∂uₖ₊₁_sparsity)
+    r_conc_∂Δt, c_conc_∂Δt, _     = findnz(conc_∂Δt_sparsity)
+    r_conc_∂xₖ, c_conc_∂xₖ, _     = findnz(conc_∂xₖ_sparsity)
+    r_conc_∂xₖ₊₁, c_conc_∂xₖ₊₁, _ = findnz(conc_∂xₖ₊₁_sparsity)
+
 
     println("Entering loop")
     for cyc in 1:Nc
         if cyc > 1
-            r, c, _ = findnz(conc_∂xₖ_sparsity)
-            append!(total_structure, collect(zip(r .+ row_offset, c .+ idx.x[cyc-1][end][1] .- 1)))
+            append!(total_structure, collect(zip(r_conc_∂xₖ .+ row_offset, c_conc_∂xₖ .+ idx.x[cyc-1][end][1] .- 1)))
 
             if free_cool_time
-                r, c, _ = findnz(conc_∂Δt_sparsity)
-                append!(total_structure, collect(zip(r .+ row_offset, c .+ idx.Δtc[cyc-1][end][1] .- 1)))
+                append!(total_structure, collect(zip(r_conc_∂Δt .+ row_offset, c_conc_∂Δt .+ idx.Δtc[cyc-1][end][1] .- 1)))
             end
 
-            r, c, _ = findnz(conc_∂xₖ₊₁_sparsity)
-            append!(total_structure, collect(zip(r .+ row_offset, c .+ idx.x[cyc][1][1] .- 1)))
-
+            append!(total_structure, collect(zip(r_conc_∂xₖ₊₁ .+ row_offset, c_conc_∂xₖ₊₁ .+ idx.x[cyc][1][1] .- 1)))
             row_offset += Nconc
         end
 
         for k in 1:(Nkb[cyc]-1)
-            r, c, _ = findnz(conb_∂xₖ_sparsity)
-            append!(total_structure, collect(zip(r .+ row_offset, c .+ idx.x[cyc][k][1] .- 1)))
-
-            r, c, _ = findnz(conb_∂uₖ_sparsity)
-            append!(total_structure, collect(zip(r .+ row_offset, c .+ idx.u[cyc][k][1] .- 1)))
+            append!(total_structure, collect(zip(r_conb_∂xₖ .+ row_offset, c_conb_∂xₖ .+ idx.x[cyc][k][1] .- 1)))
+            append!(total_structure, collect(zip(r_conb_∂uₖ .+ row_offset, c_conb_∂uₖ .+ idx.u[cyc][k][1] .- 1)))
 
             if free_build_time
-                r, c, _ = findnz(conb_∂Δt_sparsity)
-                append!(total_structure, collect(zip(r .+ row_offset, c .+ idx.Δtb[cyc][k][1] .- 1)))
+                append!(total_structure, collect(zip(r_conb_∂Δt .+ row_offset, c_conb_∂Δt .+ idx.Δtb[cyc][k][1] .- 1)))
             end
 
-            r, c, _ = findnz(conb_∂xₖ₊₁_sparsity)
-            append!(total_structure, collect(zip(r .+ row_offset, c .+ idx.x[cyc][k+1][1] .- 1)))
-
-            r, c, _ = findnz(conb_∂uₖ₊₁_sparsity)
-            append!(total_structure, collect(zip(r .+ row_offset, c .+ idx.u[cyc][k+1][1] .- 1)))
+            append!(total_structure, collect(zip(r_conb_∂xₖ₊₁ .+ row_offset, c_conb_∂xₖ₊₁ .+ idx.x[cyc][k+1][1] .- 1)))
+            append!(total_structure, collect(zip(r_conb_∂uₖ₊₁ .+ row_offset, c_conb_∂uₖ₊₁ .+ idx.u[cyc][k+1][1] .- 1)))
 
             row_offset += Nconb
         end
 
         k = Nkb[cyc]
-        r, c, _ = findnz(conb_∂xₖ_sparsity)
-        append!(total_structure, collect(zip(r .+ row_offset, c .+ idx.x[cyc][k][1] .- 1)))
-
-        r, c, _ = findnz(conb_∂uₖ_sparsity)
-        append!(total_structure, collect(zip(r .+ row_offset, c .+ idx.u[cyc][k][1] .- 1)))
+        append!(total_structure, collect(zip(r_conb_∂xₖ .+ row_offset, c_conb_∂xₖ .+ idx.x[cyc][k][1] .- 1)))
+        append!(total_structure, collect(zip(r_conb_∂uₖ .+ row_offset, c_conb_∂uₖ .+ idx.u[cyc][k][1] .- 1)))
 
         if free_build_time
-            r, c, _ = findnz(conb_∂Δt_sparsity)
-            append!(total_structure, collect(zip(r .+ row_offset, c .+ idx.Δtb[cyc][k][1] .- 1)))
+            append!(total_structure, collect(zip(r_conb_∂Δt .+ row_offset, c_conb_∂Δt .+ idx.Δtb[cyc][k][1] .- 1)))
         end
 
-        r, c, _ = findnz(conb_∂xₖ₊₁_sparsity)
-        append!(total_structure, collect(zip(r .+ row_offset, c .+ idx.x[cyc][k+1][1] .- 1)))
-
+        append!(total_structure, collect(zip(r_conb_∂xₖ₊₁ .+ row_offset, c_conb_∂xₖ₊₁ .+ idx.x[cyc][k+1][1] .- 1)))
         row_offset += Nconb
 
         for k in (Nkb[cyc]+1):(Nkb[cyc]+Nkc[cyc]-1)
-            r, c, _ = findnz(conc_∂xₖ_sparsity)
-            append!(total_structure, collect(zip(r .+ row_offset, c .+ idx.x[cyc][k][1] .- 1)))
+            append!(total_structure, collect(zip(r_conc_∂xₖ .+ row_offset, c_conc_∂xₖ .+ idx.x[cyc][k][1] .- 1)))
 
             if free_cool_time
-                r, c, _ = findnz(conc_∂Δt_sparsity)
-                append!(total_structure, collect(zip(r .+ row_offset, c .+ idx.Δtc[cyc][k][1] .- 1)))
+                append!(total_structure, collect(zip(r_conc_∂Δt .+ row_offset, c_conc_∂Δt .+ idx.Δtc[cyc][k][1] .- 1)))
             end
 
-            r, c, _ = findnz(conc_∂xₖ₊₁_sparsity)
-            append!(total_structure, collect(zip(r .+ row_offset, c .+ idx.x[cyc][k+1][1] .- 1)))
-
+            append!(total_structure, collect(zip(r_conc_∂xₖ₊₁ .+ row_offset, c_conc_∂xₖ₊₁ .+ idx.x[cyc][k+1][1] .- 1)))
             row_offset += Nconc
         end
 
     end
     println("Finished loop")
 
-    sparsity_cache = conb_∂xₖ_sparsity, conb_∂uₖ_sparsity, conb_∂xₖ₊₁_sparsity, conb_∂uₖ₊₁_sparsity, conb_∂Δt_sparsity, conc_∂xₖ_sparsity, conc_∂xₖ₊₁_sparsity, conc_∂Δt_sparsity, conb_∂uₖ_color, conb_∂xₖ_color, conb_∂xₖ₊₁_color, conb_∂uₖ₊₁_color, conb_∂Δt_color, conc_∂xₖ_color, conc_∂xₖ₊₁_color, conc_∂Δt_color, jac_cache_conb_∂Δt, jac_cache_conb_∂xₖ, jac_cache_conb_∂uₖ, jac_cache_conb_∂xₖ₊₁, jac_cache_conb_∂uₖ₊₁, jac_cache_conc_∂Δt, jac_cache_conc_∂xₖ, jac_cache_conc_∂xₖ₊₁
+    sparsity_cache = conb_∂xₖ_sparsity,
+    conb_∂uₖ_sparsity,
+    conb_∂xₖ₊₁_sparsity,
+    conb_∂uₖ₊₁_sparsity,
+    conb_∂Δt_sparsity,
+    conc_∂xₖ_sparsity,
+    conc_∂xₖ₊₁_sparsity,
+    conc_∂Δt_sparsity,
+    jac_cache_conb_∂Δt,
+    jac_cache_conb_∂xₖ,
+    jac_cache_conb_∂uₖ,
+    jac_cache_conb_∂xₖ₊₁,
+    jac_cache_conb_∂uₖ₊₁,
+    jac_cache_conc_∂Δt,
+    jac_cache_conc_∂xₖ,
+    jac_cache_conc_∂xₖ₊₁
     return total_structure, sparsity_cache
 end
 
-function build_jacobian_vector_product(z, λ, prob::AdditiveProblem)
+function build_jacobian_vector_product!(Jλ, z::AbstractVector{T}, λ, prob::AdditiveProblem) where {T}
     Nx, Nu, Nconb = prob.idx.Nx, prob.idx.Nu, prob.idx.Nconb
     NΔt = isnothing(prob.Δtb) ? 1 : 0
     t = 0.0
+    J_cache = prob.cp.J_cache
+    r_cache = prob.cp.r_cache
     zi = 1
     build_constraint_z!(r, z) = total_build_constraint!(prob.process, prob.idx, r, view(z, 1:Nx), view(z, (Nx+1):(Nx+Nu)),
         view(z, (Nx+Nu+NΔt+1):(2Nx+Nu+NΔt)), view(z, (2Nx+Nu+NΔt+1):(2Nx+2Nu+NΔt)), isnothing(prob.Δtb) ? z[Nx+Nu+1] : prob.Δtb, t, zi, prob.cp)
 
     Nz = length(z)
-    r = zeros(eltype(z), Nconb)
-    J = zeros(eltype(z), (Nconb, Nz))
-    Jλ = zeros(eltype(z), Nz)
+    # Get r and J from cache in prob
+    J = get!(J_cache, (T, Nconb, Nz)) do
+        zeros(T, (Nconb, Nz))
+    end::Matrix{T}
+    r = get!(r_cache, (T, Nconb)) do
+        zeros(T, (Nconb))
+    end::Vector{T}
     ForwardDiff.jacobian!(J, build_constraint_z!, r, z)
     mul!(Jλ, J', λ)
-
-    return Jλ
 end
 
-function build_hessian(z, λ, prob::AdditiveProblem)
-    H = ForwardDiff.jacobian(z -> build_jacobian_vector_product(z, λ, prob), z)
-    H[diagind(H)] .*= 2
-    H ./= 2
-    return H
+function build_hessian!(H, z, λ, prob::AdditiveProblem, jac_cache)
+    forwarddiff_color_jacobian!(H, (Jλ, z) -> build_jacobian_vector_product!(Jλ, z, λ, prob), z, jac_cache)
 end
 
-function cooling_jacobian_vector_product(z, λ, prob::AdditiveProblem)
+function cooling_jacobian_vector_product!(Jλ, z::AbstractVector{T}, λ, prob::AdditiveProblem) where {T}
     Nx, Nu, Nconc = prob.idx.Nx, prob.idx.Nu, prob.idx.Nconc
     NΔt = isnothing(prob.Δtc) ? 1 : 0
     t = 0.0
+    J_cache = prob.cp.J_cache
+    r_cache = prob.cp.r_cache
     zi = 1
     cooling_constraint_z!(r, z) = total_cooling_constraint!(prob.process, prob.idx, r, view(z, 1:Nx), view(z, (Nx+NΔt+1):(2Nx+NΔt)),
         isnothing(prob.Δtc) ? z[Nx+1] : prob.Δtc, t, zi, prob.cp)
 
     Nz = length(z)
-    r = zeros(eltype(z), Nconc)
-    J = zeros(eltype(z), (Nconc, Nz))
-    Jλ = zeros(eltype(z), Nz)
+    # Get r and J from cache in prob
+    J = get!(J_cache, (T, Nconc, Nz)) do
+        zeros(T, (Nconc, Nz))
+    end::Matrix{T}
+    r = get!(r_cache, (T, Nconc)) do
+        zeros(T, (Nconc))
+    end::Vector{T}
     ForwardDiff.jacobian!(J, cooling_constraint_z!, r, z)
     mul!(Jλ, J', λ)
-
-    return Jλ
 end
 
-function cooling_hessian(z, λ, prob::AdditiveProblem)
-    H = ForwardDiff.jacobian(z -> cooling_jacobian_vector_product(z, λ, prob), z)
-    H[diagind(H)] .*= 2
-    H ./= 2
-    return H
+function cooling_hessian!(H, z, λ, prob::AdditiveProblem, jac_cache)
+    forwarddiff_color_jacobian!(H, (Jλ, z) -> cooling_jacobian_vector_product!(Jλ, z, λ, prob), z, jac_cache)
 end
 
-function build2cool_jacobian_vector_product(z, λ, prob::AdditiveProblem)
+function build2cool_jacobian_vector_product!(Jλ, z::AbstractVector{T}, λ, prob::AdditiveProblem) where {T}
     Nx, Nu, Nconb = prob.idx.Nx, prob.idx.Nu, prob.idx.Nconb
     NΔt = isnothing(prob.Δtb) ? 1 : 0
     t = 0.0
+    J_cache = prob.cp.J_cache
+    r_cache = prob.cp.r_cache
     zi = 1
     build_constraint_z!(r, z) = total_build_constraint!(prob.process, prob.idx, r, view(z, 1:Nx), view(z, (Nx+1):(Nx+Nu)),
         view(z, (Nx+Nu+NΔt+1):(2Nx+Nu+NΔt)), input_idle(prob.process.input_dynamics), isnothing(prob.Δtb) ? z[Nx+Nu+1] : prob.Δtb, t, zi, prob.cp)
 
     Nz = length(z)
-    r = zeros(eltype(z), Nconb)
-    J = zeros(eltype(z), (Nconb, Nz))
-    Jλ = zeros(eltype(z), Nz)
+    # Get r and J from cache in prob
+    J = get!(J_cache, (T, Nconb, Nz)) do
+        zeros(T, (Nconb, Nz))
+    end::Matrix{T}
+    r = get!(r_cache, (T, Nconb)) do
+        zeros(T, (Nconb))
+    end::Vector{T}
     ForwardDiff.jacobian!(J, build_constraint_z!, r, z)
     mul!(Jλ, J', λ)
-
-    return Jλ
 end
 
-function build2cool_hessian(z, λ, prob::AdditiveProblem)
-    H = ForwardDiff.jacobian(z -> build2cool_jacobian_vector_product(z, λ, prob), z)
-    H[diagind(H)] .*= 2
-    H ./= 2
-    return H
+function build2cool_hessian!(H, z, λ, prob::AdditiveProblem, jac_cache)
+    forwarddiff_color_jacobian!(H, (Jλ, z) -> build2cool_jacobian_vector_product!(Jλ, z, λ, prob), z, jac_cache)
 end
 
 function constraint_hessian_structure(prob::AdditiveProblem)
     structure = []
     idx = prob.idx
     Nc, Nkb, Nkc = idx.Nc, idx.Nkb, idx.Nkc
+    Nconb, Nconc = idx.Nconb, idx.Nconc
     Nx, Nu = idx.Nx, idx.Nu
     NΔtc = isnothing(prob.Δtc) ? 1 : 0
     NΔtb = isnothing(prob.Δtb) ? 1 : 0
 
-    rb, cb, _ = findnz(sparse(ones(2(Nx + Nu) + NΔtb, 2(Nx + Nu) + NΔtb)))
-    rc, cc, _ = findnz(sparse(ones(2Nx + NΔtc, 2Nx + NΔtc)))
-    rbc, cbc, _ = findnz(sparse(ones(2Nx + Nu + NΔtb, 2Nx + Nu + NΔtb)))
+    zb   = 1.0 * ones(Symbolics.Num, 2(Nx + Nu) + NΔtb)
+    zc   = 2.0 * ones(Symbolics.Num, 2Nx + NΔtc)
+    zb2c = 3.0 * ones(Symbolics.Num, 2Nx + Nu + NΔtb)
+
+    λb   = 4.0 * ones(Symbolics.Num, Nconb)
+    λc   = 5.0 * ones(Symbolics.Num, Nconc)
+    λb2c = 6.0 * ones(Symbolics.Num, Nconb)
+
+    result_b   = 7.0 * ones(Symbolics.Num, 2(Nx + Nu) + NΔtb)
+    result_c   = 8.0 * ones(Symbolics.Num, 2Nx + NΔtc)
+    result_b2c = 9.0 * ones(Symbolics.Num, 2Nx + Nu + NΔtb)
+
+    build_sparsity      = Symbolics.jacobian_sparsity((r, z) -> build_jacobian_vector_product!(r, z, λb, prob), result_b, zb)#)triu
+    cooling_sparsity    = Symbolics.jacobian_sparsity((r, z) -> cooling_jacobian_vector_product!(r, z, λc, prob), result_c, zc)#)triu
+    build2cool_sparsity = Symbolics.jacobian_sparsity((r, z) -> build2cool_jacobian_vector_product!(r, z, λb2c, prob), result_b2c, zb2c)#)triu
+
+    build_color      = matrix_colors(Float64.(build_sparsity))
+    cooling_color    = matrix_colors(Float64.(cooling_sparsity))
+    build2cool_color = matrix_colors(Float64.(build2cool_sparsity))
+
+    rb, cb, _   = findnz(triu(build_sparsity))
+    rc, cc, _   = findnz(triu(cooling_sparsity))
+    rbc, cbc, _ = findnz(triu(build2cool_sparsity))
+
+    dx_b   = zeros(2(Nx + Nu) + NΔtb)
+    dx_c   = zeros(2Nx + NΔtc)
+    dx_b2c = zeros(2Nx + Nu + NΔtb)
+
+    zb = rand(2(Nx + Nu) + NΔtb)
+    zc = rand(2Nx + NΔtc)
+    zb2c = rand(2Nx + Nu + NΔtb)
+
+    λb   = 4.0 * randn(Nconb)
+    λc   = 5.0 * randn(Nconc)
+    λb2c = 6.0 * randn(Nconb)
+
+    build_jac_cache      = ForwardColorJacCache((r, z) -> build_jacobian_vector_product!(r, z, λb, prob), zb, nothing; dx = dx_b, colorvec = build_color, sparsity = build_sparsity)
+    cooling_jac_cache    = ForwardColorJacCache((r, z) -> cooling_jacobian_vector_product!(r, z, λc, prob), zc, nothing; dx = dx_c, colorvec = cooling_color, sparsity = cooling_sparsity)
+    build2cool_jac_cache = ForwardColorJacCache((r, z) -> build2cool_jacobian_vector_product!(r, z, λb2c, prob), zb2c, nothing; dx = dx_b2c, colorvec = build2cool_color, sparsity = build2cool_sparsity)
 
     for cyc in 1:Nc
         if cyc > 1
             xₖ = idx.x[cyc-1][end]
-            # Δt = idx.Δtc[cyc-1][end]
-            xₖ₊₁ = idx.x[cyc][1]
-            zₖ = xₖ[1]:xₖ₊₁[end]
-
             append!(structure, collect(zip(rc .+ xₖ[1] .- 1, cc .+ xₖ[1] .- 1)))
         end
 
         for k in 1:(Nkb[cyc]-1)
             xₖ = idx.x[cyc][k]
-            uₖ = idx.u[cyc][k]
-            # Δt = idx.Δtb[cyc][k]
-            xₖ₊₁ = idx.x[cyc][k+1]
-            uₖ₊₁ = idx.u[cyc][k+1]
-            zₖ = xₖ[1]:uₖ₊₁[end]
-
             append!(structure, collect(zip(rb .+ xₖ[1] .- 1, cb .+ xₖ[1] .- 1)))
         end
 
         k = Nkb[cyc]
         xₖ = idx.x[cyc][k]
-        uₖ = idx.u[cyc][k]
-        # Δt = idx.Δtb[cyc][k]
-        xₖ₊₁ = idx.x[cyc][k+1]
-        # uₖ₊₁ = idx.u[cyc][k+1]
-        # zₖ = xₖ[1]:uₖ₊₁[end]
-
         append!(structure, collect(zip(rbc .+ xₖ[1] .- 1, cbc .+ xₖ[1] .- 1)))
 
         for k in (Nkb[cyc]+1):(Nkb[cyc]+Nkc[cyc]-1)
             xₖ = idx.x[cyc][k]
-            # Δt = idx.Δtc[cyc][k]
-            xₖ₊₁ = idx.x[cyc][k+1]
-            zₖ = xₖ[1]:xₖ₊₁[end]
-
             append!(structure, collect(zip(rc .+ xₖ[1] .- 1, cc .+ xₖ[1] .- 1)))
         end
     end
 
-    return structure
+    sparsity_cache = build_sparsity,
+    cooling_sparsity,
+    build2cool_sparsity,
+    build_jac_cache,
+    cooling_jac_cache,
+    build2cool_jac_cache
+
+    return structure, sparsity_cache
+end
+
+function copy_triu_vals!(dst::AbstractArray{Float64}, H::SparseMatrixCSC{Float64})
+    i = 1
+    for col in 1:size(H, 2)
+        for r in nzrange(H, col)
+            if col ≥ rowvals(H)[r] 
+                dst[i] = nonzeros(H)[r]
+                i += 1
+            end
+        end
+    end
 end
 
 function constraint_hessian_values(prob::AdditiveProblem, H, z, μ)
     idx = prob.idx
     Nc, Nkb, Nkc = idx.Nc, idx.Nkb, idx.Nkc
-    Nx, Nu = idx.Nx, idx.Nu
     Nconb, Nconc = idx.Nconb, idx.Nconc
-    NΔtc = isnothing(prob.Δtc) ? 1 : 0
-    NΔtb = isnothing(prob.Δtb) ? 1 : 0
-    NHc = (2Nx + NΔtc)^2
-    NHb = (2Nx + 2Nu + NΔtb)^2
-    NHbc = (2Nx + Nu + NΔtb)^2
+
+    build_sparsity,
+    cooling_sparsity,
+    build2cool_sparsity,
+    build_jac_cache,
+    cooling_jac_cache,
+    build2cool_jac_cache = prob.hess_sparsity_cache
+
+    build_H = Float64.(sparse(build_sparsity))
+    cooling_H = Float64.(sparse(cooling_sparsity))
+    build2cool_H = Float64.(sparse(build2cool_sparsity))
+
+    NHc = nnz(triu(cooling_sparsity))
+    NHb = nnz(triu(build_sparsity))
+    NHbc = nnz(triu(build2cool_sparsity))
     i = 1
     j = 1
 
     for cyc in 1:Nc
         if cyc > 1
             xₖ = idx.x[cyc-1][end]
-            # Δt = idx.Δtc[cyc-1][end]
             xₖ₊₁ = idx.x[cyc][1]
             zₖ = xₖ[1]:xₖ₊₁[end]
 
-            H[i:(i+NHc-1)] .= vec(cooling_hessian(z[zₖ], μ[j:(j+Nconc-1)], prob))
+            cooling_hessian!(cooling_H, view(z, zₖ), view(μ, j:(j+Nconc-1)), prob, cooling_jac_cache)
+            copy_triu_vals!(view(H, i:(i+NHc-1)), cooling_H)
             i += NHc
             j += Nconc
         end
 
         for k in 1:(Nkb[cyc]-1)
-            # (r, z) -> total_build_constraint!(process, idx, r, xₖ, uₖ, xₖ₊₁, uₖ₊₁, Δtd, t, zi, cp)
             xₖ = idx.x[cyc][k]
-            uₖ = idx.u[cyc][k]
-            # Δt = idx.Δtb[cyc][k]
-            xₖ₊₁ = idx.x[cyc][k+1]
             uₖ₊₁ = idx.u[cyc][k+1]
             zₖ = xₖ[1]:uₖ₊₁[end]
 
-            H[i:(i+NHb-1)] .= vec(build_hessian(z[zₖ], μ[j:(j+Nconb-1)], prob))
+            build_hessian!(build_H, view(z, zₖ), view(μ, j:(j+Nconb-1)), prob, build_jac_cache)
+            copy_triu_vals!(view(H, i:(i+NHb-1)), build_H)
             i += NHb
             j += Nconb
         end
 
         k = Nkb[cyc]
         xₖ = idx.x[cyc][k]
-        uₖ = idx.u[cyc][k]
-        # Δt = idx.Δtb[cyc][k]
         xₖ₊₁ = idx.x[cyc][k+1]
-        # uₖ₊₁ = idx.u[cyc][k+1]
         zₖ = xₖ[1]:xₖ₊₁[end]
-        H[i:(i+NHbc-1)] .= vec(build2cool_hessian(z[zₖ], μ[j:(j+Nconb-1)], prob))
+        build2cool_hessian!(build2cool_H, view(z, zₖ), view(μ, j:(j+Nconb-1)), prob, build2cool_jac_cache)
+        copy_triu_vals!(view(H, i:(i+NHbc-1)), build2cool_H)
         i += NHbc
         j += Nconb
 
         for k in (Nkb[cyc]+1):(Nkb[cyc]+Nkc[cyc]-1)
             xₖ = idx.x[cyc][k]
-            # Δt = idx.Δtc[cyc][k]
             xₖ₊₁ = idx.x[cyc][k+1]
             zₖ = xₖ[1]:xₖ₊₁[end]
 
-            H[i:(i+NHc-1)] .= vec(cooling_hessian(z[zₖ], μ[j:(j+Nconc-1)], prob))
+            cooling_hessian!(cooling_H, view(z, zₖ), view(μ, j:(j+Nconc-1)), prob, cooling_jac_cache)
+            copy_triu_vals!(view(H, i:(i+NHc-1)), cooling_H)
             i += NHc
             j += Nconc
         end
@@ -986,22 +1056,24 @@ function MOI.eval_objective_gradient(prob::AdditiveProblem, grad_f, z)
 end
 
 function MOI.eval_constraint(prob::AdditiveProblem, c, z)
-    constraints!(prob.process, c, z, prob.idx, prob.cp, xf=prob.x̄, Δtb=prob.Δtb, Δtc=prob.Δtc)
+    constraints!(prob.process, c, z, prob.idx, prob.cp, xf = prob.x̄, Δtb = prob.Δtb, Δtc = prob.Δtc)
 end
 
 function MOI.eval_constraint_jacobian(prob::AdditiveProblem, jac, z)
-    constraint_jacobian!(prob.process, jac, z, prob.idx, prob.sparsity_cache, prob.cp, Δtb=prob.Δtb, Δtc=prob.Δtc, final_constraint=prob.final_constraint, prob=prob)
+    constraint_jacobian!(prob.process, jac, z, prob.idx, prob.sparsity_cache, prob.cp, Δtb = prob.Δtb, Δtc = prob.Δtc, final_constraint = prob.final_constraint, prob = prob)
 end
 
-function MOI.hessian_lagrangian_structure(prob::AdditiveProblem)
+function build_hessian_lagrangian_structure!(prob::AdditiveProblem)
     structure = objective_hessian_structure(prob.objective, prob.idx)
     prob.obj_hess_len = length(structure)
 
     if !prob.isqp
-        append!(structure, constraint_hessian_structure(prob))
+        constr_struc, sparsity_cache = constraint_hessian_structure(prob)
+        prob.hess_sparsity_cache = sparsity_cache
+        append!(structure, constr_struc)
     end
 
-    return structure
+    prob.hessian_lagrangian_sparsity = structure
 end
 
 function MOI.eval_hessian_lagrangian(prob::AdditiveProblem, H, z, σ, μ)
@@ -1023,9 +1095,10 @@ end
 
 MOI.initialize(prob::AdditiveProblem, features) = nothing
 MOI.jacobian_structure(prob::AdditiveProblem) = prob.constraint_jacobian_sparsity
+MOI.hessian_lagrangian_structure(prob::AdditiveProblem) = prob.hessian_lagrangian_sparsity
 
 function optimize_trajectory(problem::AdditiveProblem;
-    tol=1.0e-6, c_tol=1.0e-6, max_iter=500, z₀=nothing, λ₀=nothing, ug=nothing, xg=nothing, solv="ma97", isqp=false)
+    tol = 1.0e-6, c_tol = 1.0e-6, max_iter = 500, z₀ = nothing, λ₀ = nothing, ug = nothing, xg = nothing, solv = "ma97", isqp = false)
 
     solver = Ipopt.Optimizer()
     solver.options["max_iter"] = max_iter
@@ -1075,9 +1148,13 @@ function optimize_trajectory(problem::AdditiveProblem;
 
     ct = zeros(Nconstr)
     gt = zeros(Nz)
-    gr = zeros(Nz)
     jt = zeros(length(problem.constraint_jacobian_sparsity))
     μ0 = ones(Nconstr)
+
+    if isnothing(problem.hessian_lagrangian_sparsity)
+        println("Building sparsity for the lagrangian hessian...")
+        build_hessian_lagrangian_structure!(problem)
+    end
 
     @show Nz
     println("Checking objective function...")
@@ -1108,7 +1185,6 @@ function optimize_trajectory(problem::AdditiveProblem;
         # HessNaive = ForwardDiff.hessian(lagrangian, z₀)
         # display(HessNaive)
         # HessNaive = sparse(HessNaive)
-        # @show norm(vec(Hess0 .- HessNaive[1:(end-1),1:(end-1)]))
     end
 
     println("Checking constraint function...")
