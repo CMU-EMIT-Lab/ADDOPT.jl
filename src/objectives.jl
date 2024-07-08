@@ -167,9 +167,9 @@ function objective_hessian_structure(o::QuadraticObjective{Matrix{Float64}}, idx
     rows = []
     cols = []
 
-    Qs = sparse(o.Q)
-    Rs = sparse(o.R)
-    Qfs = sparse(o.Qf)
+    Qs = sparse(triu(o.Q))
+    Rs = sparse(triu(o.R))
+    Qfs = sparse(triu(o.Qf))
 
     Qr, Qc, _ = findnz(Qs)
     Rr, Rc, _ = findnz(Rs)
@@ -202,9 +202,9 @@ end
 function objective_hessian_values(o::QuadraticObjective{Matrix{Float64}}, idx, H, z)
     Nx, Nkb, Nkc, Nc, Nu = idx.Nx, idx.Nkb, idx.Nkc, idx.Nc, idx.Nu
 
-    Qv = nonzeros(sparse(o.Q))
-    Rv = nonzeros(sparse(o.R))
-    Qfv = nonzeros(sparse(o.Qf))
+    Qv = nonzeros(sparse(triu(o.Q)))
+    Rv = nonzeros(sparse(triu(o.R)))
+    Qfv = nonzeros(sparse(triu(o.Qf)))
 
     i = 0
     for c in 1:Nc

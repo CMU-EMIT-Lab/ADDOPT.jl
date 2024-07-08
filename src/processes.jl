@@ -27,10 +27,10 @@ struct Process{ID<:InputDynamics,TD<:TransferDynamics,PD<:PropertyDynamics}
     property_dynamics::PD
 end
 
-function Furnace(Pₘₐₓ, T∞, Tₘₐₓ, h, m, cₚ)
+function Furnace(Pₘₐₓ, T∞, Tₘₐₓ, h, m, cₚ, lnA, n, E)
     id = UniformPowerDynamics(Pₘₐₓ, m, cₚ)
     td = NewtonLumpedDynamics(h, T∞, m, cₚ, Tₘₐₓ)
-    pd = HardnessDynamics(38.005, 0.051590, 240.24)
+    pd = HardnessDynamics(lnA, n, E)
 
     return Process(id, td, pd)
 end
@@ -146,7 +146,7 @@ function PlanarLPBF(nrows, ncols, ndeep, l, lz, k, ρ, cₚ, T∞, h∞, σ, P�
     return Process(id, td, pd)
 end
 
-function PlanarLPBFHardness(nrows, ncols, ndeep, l, lz, k, ρ, cₚ, T∞, h∞, σ, Pₘₐₓ, Pₘᵢₙ, vₘₐₓ, Tmax, Tmin, Plim)
+function PlanarLPBFHardness(nrows, ncols, ndeep, l, lz, k, ρ, cₚ, T∞, h∞, σ, Pₘₐₓ, Pₘᵢₙ, vₘₐₓ, Tmax, Tmin, Plim, lnA, n, E)
     n_voxels = nrows * ncols
 
     # Generate x-z matrix/vector
@@ -160,7 +160,7 @@ function PlanarLPBFHardness(nrows, ncols, ndeep, l, lz, k, ρ, cₚ, T∞, h∞,
 
     id = PlanarHeatsourceDynamics(nrows, ncols, ndeep, l, lz, xₙ, zₙ, Pₘₐₓ, Pₘᵢₙ, ρ, cₚ, σ, vₘₐₓ, Plim)
     td = PlanarVoxelTemperatureDynamics(nrows, ncols, ndeep, l, lz, xₙ, zₙ, k, ρ, cₚ, T∞, h∞, Tmax, Tmin)
-    pd = HardnessDynamics(38.005, 0.051590, 240.24, num=n_voxels)
+    pd = HardnessDynamics(lnA, n, E, num=n_voxels*ndeep)
 
     return Process(id, td, pd)
 end

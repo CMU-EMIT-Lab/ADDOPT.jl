@@ -810,25 +810,34 @@ function constraint_jacobian_sparsity(idx::ProblemIndex, process::Process, cp::C
     return total_structure, sparsity_cache
 end
 
+function get_sparsity_and_cache(f!, Ncon, Nz, T::Type)
+    z   = 1.0 * ones(Symbolics.Num, Nz)
+    result   = 7.0 * ones(Symbolics.Num, Ncon)
+    sparsity  = Symbolics.jacobian_sparsity(f!, result, z)
+    color  = matrix_colors(Float64.(sparsity))
+    dx  = zeros(T, Ncon)
+    z = ones(T, Nz)
+    jac_cache = ForwardColorJacCache(f!, z, nothing; dx = dx, colorvec=color, sparsity= sparsity) 
+        
+    return convert.(T, sparsity), jac_cache
+end
+
 function build_jacobian_vector_product!(Jλ, z::AbstractVector{T}, λ, prob::AdditiveProblem) where {T}
     Nx, Nu, Nconb = prob.idx.Nx, prob.idx.Nu, prob.idx.Nconb
     NΔt = isnothing(prob.Δtb) ? 1 : 0
     t = 0.0
     J_cache = prob.cp.J_cache
-    r_cache = prob.cp.r_cache
     zi = 1
     build_constraint_z!(r, z) = total_build_constraint!(prob.process, prob.idx, r, view(z, 1:Nx), view(z, (Nx+1):(Nx+Nu)),
         view(z, (Nx+Nu+NΔt+1):(2Nx+Nu+NΔt)), view(z, (2Nx+Nu+NΔt+1):(2Nx+2Nu+NΔt)), isnothing(prob.Δtb) ? z[Nx+Nu+1] : prob.Δtb, t, zi, prob.cp)
 
     Nz = length(z)
-    # Get r and J from cache in prob
-    J = get!(J_cache, (T, Nconb, Nz)) do
-        zeros(T, (Nconb, Nz))
-    end::Matrix{T}
-    r = get!(r_cache, (T, Nconb)) do
-        zeros(T, (Nconb))
-    end::Vector{T}
-    ForwardDiff.jacobian!(J, build_constraint_z!, r, z)
+    # Get J and jac_cache from cache in prob
+    J, jac_cache = get!(J_cache, (T, Nconb, Nz)) do
+        get_sparsity_and_cache(build_constraint_z!, Nconb, Nz, T)
+    end
+
+    forwarddiff_color_jacobian!(J, build_constraint_z!, z, jac_cache)
     mul!(Jλ, J', λ)
 end
 
@@ -841,20 +850,17 @@ function cooling_jacobian_vector_product!(Jλ, z::AbstractVector{T}, λ, prob::A
     NΔt = isnothing(prob.Δtc) ? 1 : 0
     t = 0.0
     J_cache = prob.cp.J_cache
-    r_cache = prob.cp.r_cache
     zi = 1
     cooling_constraint_z!(r, z) = total_cooling_constraint!(prob.process, prob.idx, r, view(z, 1:Nx), view(z, (Nx+NΔt+1):(2Nx+NΔt)),
         isnothing(prob.Δtc) ? z[Nx+1] : prob.Δtc, t, zi, prob.cp)
 
     Nz = length(z)
-    # Get r and J from cache in prob
-    J = get!(J_cache, (T, Nconc, Nz)) do
-        zeros(T, (Nconc, Nz))
-    end::Matrix{T}
-    r = get!(r_cache, (T, Nconc)) do
-        zeros(T, (Nconc))
-    end::Vector{T}
-    ForwardDiff.jacobian!(J, cooling_constraint_z!, r, z)
+    # Get J and jac_cache from cache in prob
+    J, jac_cache = get!(J_cache, (T, Nconc, Nz)) do
+        get_sparsity_and_cache(cooling_constraint_z!, Nconc, Nz, T)
+    end
+
+    forwarddiff_color_jacobian!(J, cooling_constraint_z!, z, jac_cache)
     mul!(Jλ, J', λ)
 end
 
@@ -867,20 +873,17 @@ function build2cool_jacobian_vector_product!(Jλ, z::AbstractVector{T}, λ, prob
     NΔt = isnothing(prob.Δtb) ? 1 : 0
     t = 0.0
     J_cache = prob.cp.J_cache
-    r_cache = prob.cp.r_cache
     zi = 1
     build_constraint_z!(r, z) = total_build_constraint!(prob.process, prob.idx, r, view(z, 1:Nx), view(z, (Nx+1):(Nx+Nu)),
         view(z, (Nx+Nu+NΔt+1):(2Nx+Nu+NΔt)), input_idle(prob.process.input_dynamics), isnothing(prob.Δtb) ? z[Nx+Nu+1] : prob.Δtb, t, zi, prob.cp)
 
     Nz = length(z)
-    # Get r and J from cache in prob
-    J = get!(J_cache, (T, Nconb, Nz)) do
-        zeros(T, (Nconb, Nz))
-    end::Matrix{T}
-    r = get!(r_cache, (T, Nconb)) do
-        zeros(T, (Nconb))
-    end::Vector{T}
-    ForwardDiff.jacobian!(J, build_constraint_z!, r, z)
+    # Get J and jac_cache from cache in prob
+    J, jac_cache = get!(J_cache, (T, Nconb, Nz)) do
+        get_sparsity_and_cache(build_constraint_z!, Nconb, Nz, T)
+    end
+
+    forwarddiff_color_jacobian!(J, build_constraint_z!, z, jac_cache)
     mul!(Jλ, J', λ)
 end
 
@@ -909,9 +912,9 @@ function constraint_hessian_structure(prob::AdditiveProblem)
     result_c   = 8.0 * ones(Symbolics.Num, 2Nx + NΔtc)
     result_b2c = 9.0 * ones(Symbolics.Num, 2Nx + Nu + NΔtb)
 
-    build_sparsity      = Symbolics.jacobian_sparsity((r, z) -> build_jacobian_vector_product!(r, z, λb, prob), result_b, zb)#)triu
-    cooling_sparsity    = Symbolics.jacobian_sparsity((r, z) -> cooling_jacobian_vector_product!(r, z, λc, prob), result_c, zc)#)triu
-    build2cool_sparsity = Symbolics.jacobian_sparsity((r, z) -> build2cool_jacobian_vector_product!(r, z, λb2c, prob), result_b2c, zb2c)#)triu
+    build_sparsity      = Symbolics.jacobian_sparsity((r, z) -> build_jacobian_vector_product!(r, z, λb, prob), result_b, zb)
+    cooling_sparsity    = Symbolics.jacobian_sparsity((r, z) -> cooling_jacobian_vector_product!(r, z, λc, prob), result_c, zc)
+    build2cool_sparsity = Symbolics.jacobian_sparsity((r, z) -> build2cool_jacobian_vector_product!(r, z, λb2c, prob), result_b2c, zb2c)
 
     build_color      = matrix_colors(Float64.(build_sparsity))
     cooling_color    = matrix_colors(Float64.(cooling_sparsity))
@@ -1106,6 +1109,7 @@ function optimize_trajectory(problem::AdditiveProblem;
     solver.options["constr_viol_tol"] = c_tol
     solver.options["hsllib"] = HSL_jll.libhsl_path
     solver.options["linear_solver"] = solv
+    solver.options["neg_curv_test_tol"] = 1e-11
 
     if isqp
         solver.options["hessian_constant"] = "yes"
@@ -1142,9 +1146,6 @@ function optimize_trajectory(problem::AdditiveProblem;
             end
         end
     end
-    @show norm(z₀)
-    @show isnothing(problem.Δtb)
-    @show isnothing(problem.Δtc)
 
     ct = zeros(Nconstr)
     gt = zeros(Nz)
@@ -1169,12 +1170,12 @@ function optimize_trajectory(problem::AdditiveProblem;
         println("Checking lagrangian hessian...")
         structure = MOI.hessian_lagrangian_structure(problem)
         H0 = zeros(length(structure))
-
-        rs = [r for (r, c) in structure]
-        cs = [c for (r, c) in structure]
+        
         @time MOI.eval_hessian_lagrangian(problem, H0, z₀, 1.0, μ0)
         @time MOI.eval_hessian_lagrangian(problem, H0, z₀, 1.0, μ0)
 
+        # rs = [r for (r, c) in structure]
+        # cs = [c for (r, c) in structure]
         # Hess0 = sparse(rs, cs, H0)
         # display(Array(Hess0))
         # function lagrangian(z)

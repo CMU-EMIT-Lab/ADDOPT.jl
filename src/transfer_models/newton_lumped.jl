@@ -8,7 +8,7 @@ struct NewtonLumpedDynamics <: TransferDynamics
 end
 
 @inline Ns(td::NewtonLumpedDynamics)::Int = 1
-state_min(td::NewtonLumpedDynamics) = [200.0]
+state_min(td::NewtonLumpedDynamics) = [0.0]
 state_max(td::NewtonLumpedDynamics) = [td.Tₘₐₓ]
 
 function dynamics_function!(td::NewtonLumpedDynamics, ds::AbstractVector{Ty}, s, t, zi) where Ty

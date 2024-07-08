@@ -12,11 +12,12 @@ process = FurnaceSimple(Pₘₐₓ, T∞, Tₘₐₓ, h, m, cₚ)
 
 Q = Diagonal([1e0])
 R = Diagonal([0e-3])
+b = zeros(1)
 Qf = 10 * Q
 x₀ = [T∞]
 x̄ = [700.0] #[350.0]
 ū = [0.0]
-objective = QuadraticObjective(Q, R, Qf, x̄, ū)
+objective = QuadraticObjective(Q, b, R, Qf, x̄, ū)
 
 # Nx, Ny, l should be moved to the transfer process
 Nk = 250

@@ -32,9 +32,9 @@ function dynamics_function!(pd::HardnessDynamics, td::TransferDynamics, dα::Abs
 	unlock(pd.dictlock)
 
 	temperature!(td, T, s, zi)
-	if eltype(dα) == Symbolics.Num
-		dα .= s .+ α
-	else
-		map!((T, α) -> (T < 950.0 ? (pd.n * exp(pd.lnA - pd.E / pd.R / T) * α^(1 - 1 / pd.n)) : (-log(0.9)-α) ), dα, T, α) # (logistic((1000.0 - T) / 10.0) - α) * 
-	end
+	# if eltype(dα) == Symbolics.Num || eltype(T) == Symbolics.Num || eltype(dα) == Symbolics.Num
+	# 	dα .= s .+ α
+	# else
+		map!((T, α) -> pd.n * exp(pd.lnA - pd.E / pd.R / T - α / pd.n), dα, T, α) #pd.n * exp(pd.lnA - pd.E / pd.R / T) * α^(1 - 1 / pd.n) # (logistic((1000.0 - T) / 10.0) - α) * 
+	# end
 end
