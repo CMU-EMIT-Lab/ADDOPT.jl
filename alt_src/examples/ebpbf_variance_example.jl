@@ -90,14 +90,14 @@ U0 = [uw for k in 1:Nk]
 @time rollout!(problem, U0)
 @time rollout!(problem, U0)
 
-# @time al_ilqr!(problem; maxiters=20, ϕ=2.0)
+@time al_ilqr!(problem, ϕ=2.0, verbosity=1)
 
 for k in 1:Nk
     problem.v.λ[k] .= 0
     problem.v̄.λ[k] .= 0
 end
 
-@time al_ilqr!(problem, ϕ=2.0)
+@time al_ilqr!(problem, ϕ=2.0, verbosity=1)
 
 X, U = problem.z.X, problem.z.U
 T_surface = [reshape(Array(x[1:nsvox]), Nx, Ny) for x in X]
