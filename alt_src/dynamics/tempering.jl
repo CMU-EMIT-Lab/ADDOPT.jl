@@ -35,13 +35,15 @@ end
 function transition_state_jacobian!(dynamics::Tempering, A, xₖ, uₖ)
     lnA, Q, n, R = dynamics.lnA, dynamics.E, dynamics.n, dynamics.R
     dt = Δt(dynamics, uₖ)
+    A_diag = @view A[1:(size(A, 1)+1):end]
 
-    map!((yₖ, Tₖ) -> 1.0 / (1.0 + exp(lnA - Q / R / Tₖ - yₖ / n) * dt), A, xₖ, uₖ)
+    map!((yₖ, Tₖ) -> 1.0 / (1.0 + exp(lnA - Q / R / Tₖ - yₖ / n) * dt), A_diag, xₖ, uₖ)
 end
 
 function transition_input_jacobian!(dynamics::Tempering, B, xₖ, uₖ)
     lnA, Q, n, R = dynamics.lnA, dynamics.E, dynamics.n, dynamics.R
     dt = Δt(dynamics, uₖ)
+    B_diag = @view B[1:(size(B, 1)+1):end]
 
-    map!((yₖ, Tₖ) -> (n * Q / R / (Tₖ^2)) / (1.0 + exp(-lnA + Q / R / Tₖ + yₖ / n) / dt), B, xₖ, uₖ)
+    map!((yₖ, Tₖ) -> (n * Q / R / (Tₖ^2)) / (1.0 + exp(-lnA + Q / R / Tₖ + yₖ / n) / dt), B_diag, xₖ, uₖ)
 end
