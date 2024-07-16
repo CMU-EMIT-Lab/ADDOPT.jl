@@ -14,8 +14,8 @@ lnA = 38.005
 n = 0.051590
 E = 240.24e-3 # kJ / mol K
 
-dt = 0.04 # s
-Nk = 200
+dt = 0.05 # s
+Nk = 160
 
 x₀ = [T∞; log(-log(1 - 0.1))]
 x̄ = [T∞; log(-log(1 - 0.9))]
@@ -44,17 +44,18 @@ process = Process(Nk, dynamics, Vector{Float64})
 problem = Problem(x₀, process, costs, constraints, Matrix{Float64})
 U0 = [[600.0e-3] for _ in 1:(Nk-1)]
 
-rollout!(problem, U0)
-@time al_ilqr!(problem; maxiters=20, ϕ=2.0)
-rollout!(problem, U0)
-@time al_ilqr!(problem; maxiters=20, ϕ=2.0)
-rollout!(problem, U0)
-# @profview_allocs al_ilqr!(problem; maxiters=20, ϕ=2.0) sample_rate = 0.001
-# rollout!(problem, U0)
-# @profview al_ilqr!(problem; maxiters=20, ϕ=2.0)
 
 @time rollout!(problem, U0)
-@time al_ilqr!(problem; maxiters=20, ϕ=2.0)
+@time al_ilqr!(problem; maxiters=20, ϕ=2.0, gtol=1e-4, verbosity=2)
+rollout!(problem, U0)
+@time al_ilqr!(problem; maxiters=20, ϕ=2.0, gtol=1e-4, verbosity=2)
+rollout!(problem, U0)
+@profview_allocs al_ilqr!(problem; maxiters=20, ϕ=2.0) sample_rate = 0.001
+rollout!(problem, U0)
+@profview al_ilqr!(problem; maxiters=20, ϕ=2.0)
+
+@time rollout!(problem, U0)
+@time al_ilqr!(problem; maxiters=20, ϕ=2.0, gtol=1e-4, verbosity=2)
 X, U = problem.z.X, problem.z.U
 t = dt*0:(Nk-1)
 T = [x[1] for x in X]

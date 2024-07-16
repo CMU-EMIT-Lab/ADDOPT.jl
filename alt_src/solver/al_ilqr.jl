@@ -1,5 +1,5 @@
 
-function al_ilqr!(problem::Problem; μ=0.1, ϕ=10.0, maxiters=100, inneriters=400, tol=1e-4, ctol=1e-6, verbosity=1, ρi=1e-10)
+function al_ilqr!(problem::Problem; μ=0.1, ϕ=10.0, maxiters=100, inneriters=1000, tol=1e-4, gtol=1e-3, ctol=1e-6, verbosity=1, ρi=1e-10)
     process = problem.process
     N = process.Nk
     λ, c = problem.v.λ, problem.v.c
@@ -11,7 +11,7 @@ function al_ilqr!(problem::Problem; μ=0.1, ϕ=10.0, maxiters=100, inneriters=40
     end
 
     for iter in 1:maxiters
-        J = ilqr!(problem, μ; ilqr_iters=inneriters, tol=tol, verbosity=verbosity, ρi=ρi)
+        J = ilqr!(problem, μ; ilqr_iters=inneriters, tol=tol, gtol=gtol, verbosity=verbosity, ρi=ρi)
         cviol = constraint_violation(problem)
         if verbosity ≥ 1
             @printf "AL-iLQR iteration %03d - J: %.5e - |c|∞: %.5e - μ: %.4e\n" iter J cviol μ
@@ -32,26 +32,27 @@ function al_ilqr!(problem::Problem; μ=0.1, ϕ=10.0, maxiters=100, inneriters=40
 
         # Increase penalty
         μ *= ϕ
-        μ = clamp(μ, 1.0, 1e8)
+        μ = clamp(μ, 0.1, 1e8)
     end
 
     @warn "Exceeded maximum iterations for AL-iLQR"
 end
 
-function ilqr!(problem::Problem, μ; ilqr_iters=300, tol=1e-4, verbosity=2, ρi=1e-10)
+function ilqr!(problem::Problem, μ; ilqr_iters=1000, tol=1e-4, gtol=1e-3, verbosity=2, ρi=1e-8)
     rollout!(problem)
     eval_constraints!(problem)
     eval_penalty_multiplier!(problem, problem.v, μ)
+    ρ = 0.0
 
     for iter in 1:ilqr_iters
         J_old = eval_augmented_cost(problem, problem.z, problem.v)
-        ilqr_step!(problem, μ; verbosity=verbosity, ρi=ρi)
+        Δu_ff, ρ = ilqr_step!(problem, μ; verbosity=verbosity, ρi=ρi, ρ=ρ)
         J_new = eval_augmented_cost(problem, problem.z, problem.v)
         if verbosity ≥ 2
-            @printf "iLQR iteration %03d - J: %.5e\n" iter J_new
+            @printf "iLQR iteration %03d - J: %.5e - ρ: %.5e - |Δu_ff|: %.5e\n" iter J_new ρ Δu_ff
         end
 
-        if abs(J_old - J_new) < tol
+        if abs(J_old - J_new) < tol && Δu_ff < gtol
             return J_new
         end
     end
@@ -60,43 +61,44 @@ function ilqr!(problem::Problem, μ; ilqr_iters=300, tol=1e-4, verbosity=2, ρi=
     return -1.0
 end
 
-function ilqr_step!(problem::Problem, μ; ρi=1e-8, verbosity=3)
-    ρ = 0.0
-    dρ = 0.0
+function ilqr_step!(problem::Problem, μ; ρi=1e-8, verbosity=3, ρ=0.0)
     ΔJ = Inf
-
+    Δu_ff = 0.0
     eval_penalty_multiplier!(problem, problem.v, μ)
+    ΔV₁, ΔV₂ = 0.0, 0.0
 
     for _ in 1:100
         ## Backward pass: calculate gains and feedforward term
-        ΔV₁, ΔV₂ = backward_pass(problem, ρ; verbosity=verbosity)
+        Δu_ff, ΔV₁, ΔV₂ = backward_pass(problem, ρ; verbosity=verbosity)
         while isinf(ΔV₁)
-            dρ = max(dρ * 1.6, 1.6)
-            ρ = max(ρ * dρ, ρi)
+            ρ = max(ρ * 1.6^2, ρi)
             ρ = clamp(ρ, 0.0, 1e8)
             if verbosity ≥ 3
                 println("Increasing Regularization after Backward Pass Failure, ρ: $ρ")
             end
-            ΔV₁, ΔV₂ = backward_pass(problem, ρ; verbosity=verbosity)
+            Δu_ff, ΔV₁, ΔV₂ = backward_pass(problem, ρ; verbosity=verbosity)
         end
 
+        ρ = ρ > 0.0 ? max(ρ / 1.6, ρi) : 0.0
+        ρ = clamp(ρ, 0.0, 1e8)
+
+
         ## Rollout with line search
-        ΔJ = forward_pass(problem, ΔV₁, ΔV₂, μ; verbosity=verbosity)
+        ΔJ, α = forward_pass(problem, ΔV₁, ΔV₂, μ; verbosity=verbosity)
 
         if ΔJ != Inf
             break
         end
-
-        ## Increase Regularization
-        dρ = max(dρ * 1.6, 1.6)
-        ρ = max(ρ * dρ, ρi)
+        ρ = max(ρ * 1.6^2, ρi)
+        ρ += 1.0
         ρ = clamp(ρ, 0.0, 1e8)
+
         if verbosity ≥ 3
             println("Increasing Regularization after Line Search Failure, ρ: $ρ")
         end
     end
 
-    return ΔJ
+    return Δu_ff, ρ
 end
 
 function backward_pass(problem::Problem, ρ; verbosity=4)
@@ -108,6 +110,7 @@ function backward_pass(problem::Problem, ρ; verbosity=4)
     v = problem.v
     c, λ, Iμ = v.c, v.λ, v.Iμ
     A, B = problem.A, problem.B
+    Apx, Bpu, Bpx = problem.Apx, problem.Bpu, problem.Bpx
     cx, cu = problem.cx, problem.cu
     lx, lu, lxx, luu, lux = problem.lx, problem.lu, problem.lxx, problem.luu, problem.lux
     Qxd, Qud, Qxxd, Quud, Quxd, = problem.Qx, problem.Qu, problem.Qxx, problem.Quu, problem.Qux
@@ -120,6 +123,7 @@ function backward_pass(problem::Problem, ρ; verbosity=4)
 
     ΔV₁ = 0.0
     ΔV₂ = 0.0
+    Δu_ff = 0.0
 
     # Optimal terminal cost-to-go second order expansion
     # p[N] .= lx[N] .+ cx[N]' * (λ[N] + Iμ[N] * c[N])
@@ -138,6 +142,9 @@ function backward_pass(problem::Problem, ρ; verbosity=4)
         # Update derivatives
         transition_state_jacobian!(dynamics[k], A[k], x[k], u[k])
         transition_input_jacobian!(dynamics[k], B[k], x[k], u[k])
+        transition_state_jacobian_product_state_jacobian!(dynamics[k], Apx[k], p[k+1], x[k], u[k])
+        transition_input_jacobian_product_input_jacobian!(dynamics[k], Bpu[k], p[k+1], x[k], u[k])
+        transition_input_jacobian_product_state_jacobian!(dynamics[k], Bpx[k], p[k+1], x[k], u[k])
         constraint_state_jacobian!(constraints[k], cx[k], x[k], u[k])
         constraint_input_jacobian!(constraints[k], cu[k], x[k], u[k])
         cost_state_gradient!(costs[k], lx[k], x[k], u[k])
@@ -162,17 +169,17 @@ function backward_pass(problem::Problem, ρ; verbosity=4)
         mul!(cuIμ, cu[k]', Iμ[k])
 
         # Qxx .= lxx[k] .+ A[k]' * P[k+1] * A[k] .+ cx[k]' * Iμ[k] * cx[k]
-        Qxx .= lxx[k]
+        Qxx .= lxx[k] .+ Apx[k]
         mul!(Qxx, AtP, A[k], 1.0, 1.0)
         mul!(Qxx, cxIμ, cx[k], 1.0, 1.0)
 
         # Quu .= luu[k] .+ B[k]' * P[k+1] * B[k] .+ cu[k]' * Iμ[k] * cu[k]
-        Quu .= luu[k]
+        Quu .= luu[k] .+ Bpu[k]
         mul!(Quu, BtP, B[k], 1.0, 1.0)
         mul!(Quu, cuIμ, cu[k], 1.0, 1.0)
 
         # Qux .= lux[k] .+ B[k]' * P[k+1] * A[k] .+ cu[k]' * Iμ[k] * cx[k]
-        Qux .= lux[k]
+        Qux .= lux[k] .+ Bpx[k]
         mul!(Qux, BtP, A[k], 1.0, 1.0)
         mul!(Qux, cuIμ, cx[k], 1.0, 1.0)
 
@@ -194,7 +201,7 @@ function backward_pass(problem::Problem, ρ; verbosity=4)
         Quu_scratch ./= 2.0
         # Quu_scratch = Symmetric(Quu)
         # Quu_scratch .+= Iρ
-        Quu_factorized = LinearAlgebra.cholesky!(Quu_scratch, check=false)
+        Quu_factorized = LinearAlgebra.cholesky!(Hermitian(Quu_scratch), check=false)
 
         # C, info = LinearAlgebra._chol!(Quu_scratch, UpperTriangular)
         # Quu_factorized = Cholesky(C.data, 'L', info)
@@ -202,7 +209,7 @@ function backward_pass(problem::Problem, ρ; verbosity=4)
             if verbosity ≥ 4
                 println("Failing backward pass factorization at iteration $k")
             end
-            return -Inf, -Inf
+            return Δu_ff, -Inf, -Inf
         end
         # Quu_factorized = Quu_scratch
         # K[k] .= Quu \ Qux
@@ -211,6 +218,8 @@ function backward_pass(problem::Problem, ρ; verbosity=4)
         # d[k] .= Quu \ Qu
         ldiv!(d[k], Quu_factorized, Qu)
         d[k] .*= -1
+
+        Δu_ff += √(dot(d[k], d[k])) / N
 
         mul!(KtQu, K[k]', Quu)
 
@@ -230,16 +239,17 @@ function backward_pass(problem::Problem, ρ; verbosity=4)
         ΔV₂ += 0.5 * dot(d[k], Quu * d[k])#dot(d[k], Quu, d[k])
     end
 
-    return ΔV₁, ΔV₂
+    return Δu_ff, ΔV₁, ΔV₂
 end
 
 function forward_pass(problem, ΔV₁, ΔV₂, μ; verbosity=4)
     return linesearch_on_rollout!(problem, ΔV₁, ΔV₂, μ; verbosity=verbosity)
 end
 
-function linesearch_on_rollout!(problem::Problem, ΔV₁, ΔV₂, μ; α=1.0, c=0.5, maxiters=20, verbosity=4)
+function linesearch_on_rollout!(problem::Problem, ΔV₁, ΔV₂, μ; c=0.5, maxiters=10, verbosity=4)
     z, z̄ = problem.z, problem.z̄
     v, v̄ = problem.v, problem.v̄
+    α = 1.0
 
     J0 = eval_augmented_cost(problem, z, v)
     for k in 1:v.Nk
@@ -268,17 +278,18 @@ function linesearch_on_rollout!(problem::Problem, ΔV₁, ΔV₂, μ; α=1.0, c=
         #     return Inf
         # end
 
-        if ΔJ̄ > 0.0 && 1e-4 ≤ (J0 - J) / ΔJ̄
+        # @show i J0 J ΔJ̄
+        if ΔJ̄ > 0.0 && 1e-8 ≤ (J0 - J) / ΔJ̄
             copy!(z, z̄)
             copy!(v, v̄)
             # println("Linesearch suceeded with step of $(J0 - J)")
-            return J0 - J
+            return J0 - J, α
         end
 
         α *= c
     end
 
-    return Inf
+    return Inf, α
 end
 
 function ddp_rollout!(problem::Problem{T,V,M,D}, α, z::Trajectory{T,V}, z̄::Trajectory{T,V}; verbosity=5) where {T<:AbstractFloat,V<:AbstractVector{T},M<:AbstractMatrix{T},D<:Dynamics{T}}

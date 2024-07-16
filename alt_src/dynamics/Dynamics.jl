@@ -1,6 +1,5 @@
 
-abstract type Dynamics{T}
-end
+abstract type Dynamics{T} end
 
 nx(dynamics::Dynamics)::Int = 0
 nxₖ₊₁(dynamics::Dynamics)::Int = nx(dynamics)
@@ -24,6 +23,18 @@ end
 function transition_input_jacobian!(dynamics::Dynamics, B, xₖ, uₖ)
     r = copy(xₖ)
     ForwardDiff.jacobian!(B, (xₖ₊₁, uₖ) -> transition!(dynamics, xₖ₊₁, xₖ, uₖ), r, uₖ)
+end
+
+function transition_state_jacobian_product_state_jacobian!(dynamics::Dynamics, ∂Ap∂x, p, xₖ, uₖ)
+    ∂Ap∂x .= 0
+end
+
+function transition_input_jacobian_product_input_jacobian!(dynamics::Dynamics, ∂Bp∂u, p, xₖ, uₖ)
+    ∂Bp∂u .= 0
+end
+
+function transition_input_jacobian_product_state_jacobian!(dynamics::Dynamics, ∂Bp∂x, p, xₖ, uₖ)
+    ∂Bp∂x .= 0
 end
 
 include("furnace.jl")

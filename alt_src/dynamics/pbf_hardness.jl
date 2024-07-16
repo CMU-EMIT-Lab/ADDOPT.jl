@@ -53,3 +53,28 @@ function transition_input_jacobian!(dynamics::PBFTempering, B, xₖ, uₖ)
     B .= 0.0
     transition_input_jacobian!(pbf_powerfield, (@view B[1:nT, :]), Tₖ, uₖ)
 end
+
+function transition_state_jacobian_product_state_jacobian!(dynamics::PBFTempering, ∂Ap∂x, p, xₖ, uₖ)
+    pbf_powerfield, tempering = dynamics.pbf_powerfield, dynamics.tempering
+    nT = nx(pbf_powerfield)
+    Tₖ = @view xₖ[1:nT]
+    ŷₖ = @view xₖ[(nT+1):end]
+    py = @view p[(nT+1):end]
+    Ap11 = @view ∂Ap∂x[1:nT, 1:nT]
+    Ap12 = @view ∂Ap∂x[1:nT, (nT+1):end]
+    Ap21 = @view ∂Ap∂x[(nT+1):end, 1:nT]
+    Ap22 = @view ∂Ap∂x[(nT+1):end, (nT+1):end]
+
+    transition_input_jacobian_product_input_jacobian!(tempering, Ap11, py, ŷₖ, Tₖ)
+    transition_input_jacobian_product_state_jacobian!(tempering, Ap12, py, ŷₖ, Tₖ)
+    transition_input_jacobian_product_state_jacobian!(tempering, Ap21, py, ŷₖ, Tₖ)
+    transition_state_jacobian_product_state_jacobian!(tempering, Ap22, py, ŷₖ, Tₖ)
+end
+
+function transition_input_jacobian_product_input_jacobian!(dynamics::PBFTempering, ∂Bp∂u, p, xₖ, uₖ)
+    ∂Bp∂u .= 0
+end
+
+function transition_input_jacobian_product_state_jacobian!(dynamics::PBFTempering, ∂Bp∂x, p, xₖ, uₖ)
+    ∂Bp∂x .= 0
+end

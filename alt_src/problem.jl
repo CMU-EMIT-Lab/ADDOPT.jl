@@ -13,6 +13,10 @@ struct Problem{T<:AbstractFloat,V<:AbstractVector{T},M<:AbstractMatrix{T},D<:Dyn
     A::Vector{M}   # Cache of dynamics matrices (state Jacobians)
     B::Vector{M}   # Cache of input matrices (input Jacobians)
 
+    Apx::Vector{M}
+    Bpu::Vector{M}
+    Bpx::Vector{M}
+
     cx::Vector{M}  # Cache of constraint state Jacobians
     cu::Vector{M}  # Cache of constraint input Jacobians
 
@@ -30,7 +34,7 @@ struct Problem{T<:AbstractFloat,V<:AbstractVector{T},M<:AbstractMatrix{T},D<:Dyn
     AtP::Vector{M} # Cache of A' * P 
     BtP::Vector{M} # Cache of A' * P
     KtQu::Vector{M} # Cache of K' * Quu
-    λIμc::Vector{V}     # Cache of λ + Iμ*c
+    λIμc::Vector{V} # Cache of λ + Iμ*c
     cxIμ::Vector{M} # Cache of cx' * Iμ
     cuIμ::Vector{M} # Cache of cu' * Iμ
     Quus::Vector{M} # Cache of cost-to-go input Hessians
@@ -55,6 +59,10 @@ struct Problem{T<:AbstractFloat,V<:AbstractVector{T},M<:AbstractMatrix{T},D<:Dyn
 
         A_d = Dict{Tuple{Int,Int},M}()
         B_d = Dict{Tuple{Int,Int},M}()
+
+        Apx_d = Dict{Tuple{Int,Int},M}()
+        Bpu_d = Dict{Tuple{Int,Int},M}()
+        Bpx_d = Dict{Tuple{Int,Int},M}()
 
         cx_d = Dict{Tuple{Int,Int},M}()
         cu_d = Dict{Tuple{Int,Int},M}()
@@ -86,6 +94,15 @@ struct Problem{T<:AbstractFloat,V<:AbstractVector{T},M<:AbstractMatrix{T},D<:Dyn
             end
             if !haskey(B_d, (n, m))
                 B_d[(n, m)] = M(undef, n, m)
+            end
+            if !haskey(Apx_d, (n, n))
+                Apx_d[(n, n)] = M(undef, n, n)
+            end
+            if !haskey(Bpu_d, (m, m))
+                Bpu_d[(m, m)] = M(undef, m, m)
+            end
+            if !haskey(Bpx_d, (m, n))
+                Bpx_d[(m, n)] = M(undef, m, n)
             end
             if !haskey(cx_d, (c, n))
                 cx_d[(c, n)] = M(undef, c, n)
@@ -151,6 +168,9 @@ struct Problem{T<:AbstractFloat,V<:AbstractVector{T},M<:AbstractMatrix{T},D<:Dyn
 
         A = [A_d[(nx(dynamics[k]), nx(dynamics[k]))] for k in 1:(Nk-1)]
         B = [B_d[(nx(dynamics[k]), nu(dynamics[k]))] for k in 1:(Nk-1)]
+        Apx = [Apx_d[(nx(dynamics[k]), nx(dynamics[k]))] for k in 1:(Nk-1)]
+        Bpu = [Bpu_d[(nu(dynamics[k]), nu(dynamics[k]))] for k in 1:(Nk-1)]
+        Bpx = [Bpx_d[(nu(dynamics[k]), nx(dynamics[k]))] for k in 1:(Nk-1)]
 
         cx = [cx_d[(nc(constraints[k]), nx(dynamics[k]))] for k in 1:Nk]
         cu = [cu_d[(nc(constraints[k]), nu(dynamics[k]))] for k in 1:Nk]
@@ -185,6 +205,7 @@ struct Problem{T<:AbstractFloat,V<:AbstractVector{T},M<:AbstractMatrix{T},D<:Dyn
             process, z, z̄, v, v̄,
             costs, constraints,
             A, B,
+            Apx, Bpu, Bpx,
             cx, cu,
             lx, lu, lxx, luu, lux,
             Qxd, Qud, Qxxd, Quud, Quxd,
