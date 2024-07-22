@@ -24,19 +24,22 @@ struct PBFPowerField{T<:AbstractFloat,V<:AbstractVector{T},M<:AbstractMatrix{T}}
 
     Δt::T
 
-    function PBFPowerField(nx, ny, nz, l, k, ρ, cₚ, T∞, T₀, h, Δt, T, V, M)
+    σ::T
+    buffer::Int
+
+    function PBFPowerField(nx, ny, nz, l, k, ρ, cₚ, T∞, T₀, h, Δt, T, V, M; σ=0.0, buffer=0)
         α = k / ρ / cₚ
         C = ρ * l^3 * cₚ
 
-        A, B, e = matrices_for_voxel_conduction(nx, ny, nz, l, α, C, h, T₀, T∞)
+        A, B, e = matrices_for_voxel_conduction(nx, ny, nz, l, α, C, h, T₀, T∞, σ, buffer)
         Ad, Bd, ed = discretize_linear_dynamics(A, B, e, Δt)
 
-        new{T,V,M}(nx, ny, nz, l, k, ρ, cₚ, T∞, T₀, h, A, B, e, Ad, Bd, ed, Δt)
+        new{T,V,M}(nx, ny, nz, l, k, ρ, cₚ, T∞, T₀, h, A, B, e, Ad, Bd, ed, Δt, σ, buffer)
     end
 end
 
 nx(dynamics::PBFPowerField)::Int = dynamics.nx * dynamics.ny * dynamics.nz
-nu(dynamics::PBFPowerField)::Int = dynamics.nx * dynamics.ny
+nu(dynamics::PBFPowerField)::Int = (dynamics.nx - 2dynamics.buffer) * (dynamics.ny - 2dynamics.buffer)
 Δt(dynamics::PBFPowerField, u) = dynamics.Δt
 
 function rate!(dynamics::PBFPowerField{T}, ẋ::AbstractVector{E}, x, u) where {T,E}
@@ -75,13 +78,18 @@ function discretize_linear_dynamics(A, B, e, dt)
     return Ad, Bd, ed
 end
 
-function matrices_for_voxel_conduction(nx, ny, nz, l, α, C, h, T₀, T∞)
+function matrices_for_voxel_conduction(nx, ny, nz, l, α, C, h, T₀, T∞, σ, buffer)
     L = voxel_laplacian(nx, ny, nz)
     A∞ = Diagonal(surface_voxels(nx, ny, nz)) * l^2
     A₀ = Diagonal(volume_voxels(nx, ny, nz)) * l^2
 
+    power_mask = zeros(Bool, (nx, ny, nz))
+    power_mask[(1+buffer):(end-buffer), (1+buffer):(end-buffer), 1] .= true
+    power_mask = vec(power_mask)
+
     A = -((α / l^2) * L + (α / l^4) * A₀ + (h / C) * A∞)
-    B = A∞[:, 1:nx*ny] / (l^2) / C ###
+    B = (σ == 0.0) ? (A∞ / (l^2) / C) : (pairwise_gaussian_integral(nx, ny, nz, l, σ) .* surface_voxels(nx, ny, nz) ./ C)
+    B = B[:, power_mask]
     e = ((α / l^4) * A₀ * T₀ + (h / C) * A∞ * T∞) * ones(nx * ny * nz)
 
     return A, B, e
@@ -146,4 +154,45 @@ function voxel_adjacency(nx, ny, nz)
     end
 
     return A
+end
+
+function get_coordinates(nx, ny, nz, l)
+    x = zeros(nx, ny, nz)
+    y = zeros(nx, ny, nz)
+    z = zeros(nx, ny, nz)
+
+    for i in 1:nx
+        x[i, :, :] .= i * l
+    end
+    for i in 1:ny
+        y[:, i, :] .= i * l
+    end
+    for i in 1:nz
+        z[:, :, i] .= i * l
+    end
+
+    return [vec(x)'; vec(y)'; vec(z)']
+end
+
+function pairwise_distances(nx, ny, nz, l)
+    xyz = get_coordinates(nx, ny, nz, l)
+    nvox = nx * ny * nz
+    D = zeros(nvox, nvox)
+    dr = zeros(3)
+
+    for i in 1:nvox
+        for j in 1:nvox
+            dr .= xyz[:, i] .- xyz[:, j]
+            D[i, j] = norm(dr)
+        end
+    end
+
+    return D
+end
+
+function pairwise_gaussian_integral(nx, ny, nz, l, σ)
+    D = pairwise_distances(nx, ny, nz, l)
+    G = map(d -> (l^2 / (2π * σ^2)) * exp(-(d^2 / (2 * σ^2))), D)
+
+    return G
 end

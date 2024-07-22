@@ -17,3 +17,5 @@ include("process.jl")
 include("problem.jl")
 
 include("solver/al_ilqr.jl")
+
+include("instantiate.jl")

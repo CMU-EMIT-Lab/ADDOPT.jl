@@ -4,6 +4,7 @@ using Profile
 using LinearAlgebra
 using Images
 using CUDA
+using CSV, Tables
 using Printf
 
 import LinearAlgebra.mul!
@@ -16,7 +17,7 @@ M = CuMatrix{Ty}
 # Geometric parameters
 mask_img = Ty.(Gray.(load("scotty_bw.png")))
 
-n_subsample = 7
+n_subsample = 5
 mask_img_blurred = imfilter(mask_img, Kernel.gaussian(n_subsample))
 mask_img_subsampled = mask_img_blurred[(n_subsample÷2):n_subsample:end, (n_subsample÷2):n_subsample:end]
 mask_img_subsampled = (1.0 .- Float64.(mask_img_subsampled)) .* 0.8 .+ 0.1
@@ -24,8 +25,10 @@ mask_img_subsampled = (1.0 .- Float64.(mask_img_subsampled)) .* 0.8 .+ 0.1
 mask_top = vec(mask_img_subsampled)
 Nx, Ny = size(mask_img_subsampled)
 Nz = 4
+buffer = 2
 nsvox = Ny * Nx
 nvox = nsvox * Nz
+Nu = (Nx - 2buffer) * (Ny - 2buffer)
 mask = vcat(mask_top, 0.1 * ones(Ty, nsvox * (Nz - 1)))
 
 l = 1e-3 * n_subsample / 7 # m
@@ -34,7 +37,7 @@ l = 1e-3 * n_subsample / 7 # m
 @show nsvox
 @show nvox
 
-σ = 250e-6 / 2.355 # Spot diameter, m #250e-6
+σ = 1200e-6 / 1.35 # Spot diameter, m #250e-6
 ω = 2π * 178.446e3 # 1/s
 Pₛₑₜ = 3000.0 # W
 
@@ -64,13 +67,17 @@ dt::Ty = 50e-3 # s, aka 50ms
 Tmax = T_AC1 * ones(nvox)
 
 tempering = Tempering(lnA, n, E, dt; num=nvox)
-pbf_powerfield = PBFPowerField(Nx, Ny, Nz, l, k, ρ, cₚ, T∞, T₀, h, dt, Ty, V, M)
+pbf_powerfield = PBFPowerField(Nx, Ny, Nz, l, k, ρ, cₚ, T∞, T₀, h, dt, Ty, V, M; σ=σ, buffer=buffer)
 dynamics = PBFTempering(pbf_powerfield, tempering)
 
+power_mask = zeros(Bool, (Nx, Ny, Nz))
+power_mask[(1+buffer):(end-buffer), (1+buffer):(end-buffer), 1] .= true
+power_mask = vec(power_mask)
+
 x₀ = V([T∞ * ones(nvox); log(-log(1 - 0.1)) * ones(nvox)])
-uw = (mask_top .+ 0.2) * Pₛₑₜ / sum((mask_top .+ 0.2))
+uw = (mask_top[power_mask[1:nsvox]] .+ 0.2) * Pₛₑₜ / sum((mask_top[power_mask[1:nsvox]] .+ 0.2))
 uw = V(uw)
-u0 = zeros(nsvox)
+u0 = zeros(Nu)
 u0 = V(u0)
 
 Nk = 0
@@ -98,24 +105,24 @@ process = Process(Nk, [dynamics for _ in 1:Nk], V)
 
 A_x_eq = M(undef, 0, 2nvox)
 b_x_eq = V(undef, 0)
-A_u_eq = M(ones(1, nsvox) ./ Pₛₑₜ)
+A_u_eq = M(ones(1, Nu) ./ Pₛₑₜ)
 b_u_eq = V([1.0])
 A_x_ineq = M([collect(1.0 * I(nvox)) zeros(nvox, nvox)])
 b_x_ineq = V(Tmax)
-A_u_ineq = M(collect(-1.0 * I(nsvox)))
-b_u_ineq = V(zeros(nsvox))
+A_u_ineq = M(collect(-1.0 * I(Nu)))
+b_u_ineq = V(zeros(Nu))
 
 build_constraint = LinearConstraint(A_x_eq, b_x_eq, A_u_eq, b_u_eq, A_x_ineq, b_x_ineq, A_u_ineq, b_u_ineq)
-cooling_constraint = LinearConstraint(A_x_eq, b_x_eq, A_u_ineq, b_u_ineq, A_x_ineq, b_x_ineq, M(undef, 0, nsvox), V(undef, 0))
+cooling_constraint = LinearConstraint(A_x_eq, b_x_eq, A_u_ineq, b_u_ineq, A_x_ineq, b_x_ineq, M(undef, 0, Nu), V(undef, 0))
 constraints = vcat([build_constraint for _ in 1:(Nk-Nkc)], [cooling_constraint for _ in 1:Nkc])
 
 
 x̄ = V([T∞ * ones(nvox); log.(-log.(1 .- mask))])
-ū = V(zeros(nsvox))
+ū = V(zeros(Nu))
 
 Q = diagm([zeros(nvox); 1e-2 / Nk / nsvox * ones(nsvox); 0 * ones(nvox - nsvox)])
 Qf = diagm([zeros(nvox); 1e3 / nsvox * ones(nsvox); 0 * ones(nvox - nsvox)])
-R = diagm(0.0 * ones(nsvox))
+R = diagm(0.0 * ones(Nu))
 Q = M(Q)
 Qf = M(Qf)
 R = M(R)
@@ -144,7 +151,7 @@ X, U = problem.z.X, problem.z.U
 t = (0:(Nk-1)) .* dt
 T_surface = [reverse(reshape(Array(x[1:nsvox] .* 1e3), Nx, Ny), dims=1) for x in X]
 ŷ_surface = [reverse(reshape(Array(x[(nvox+1):(nvox+nsvox)]), Nx, Ny), dims=1) for x in X]
-P_surface = [reverse(reshape(Array(u ./ (l * 1e3)^2), Nx, Ny), dims=1) for u in U]
+P_surface = [reverse(reshape(Array((pbf_powerfield.B*u)[1:nsvox] .* (l^3 * ρ * cₚ) ./ (l * 1e3)^2), Nx, Ny), dims=1) for u in U]
 Pdmax = round(maximum([maximum(P) for P in P_surface]), sigdigits=1)
 
 y_surface = [1 .- exp.(-exp.(ŷ)) for ŷ in ŷ_surface]
@@ -164,17 +171,17 @@ gif(anim, "unoptimized_$(n_subsample).mp4", fps=(1 / dt))
 
 ### OPTIMIZE ###
 @show eval_cost(problem)
-@time al_ilqr!(problem; ctol=1e-4, μ=0.1, ϕ=3.0, verbosity=2, ρi=1e-10, tol=1e-4, gtol=Pₛₑₜ / nsvox / 100)
-# @profview al_ilqr!(problem; ctol=1e-4, μ=0.1, ϕ=3.0, verbosity=2, ρi=1e-10, tol=1e-4, gtol=Pₛₑₜ / nsvox / 100)
+@time al_ilqr!(problem; ctol=1e-4, μ=0.1, ϕ=3.0, verbosity=3, ρi=1e-10, tol=1e-4, gtol=Pₛₑₜ / Nu / 100)
+# @profview al_ilqr!(problem; ctol=1e-4, μ=0.1, ϕ=3.0, verbosity=2, ρi=1e-10, tol=1e-4, gtol=Pₛₑₜ / Nu / 100)
 @show eval_cost(problem)
-
+U_opt = [copy(u) for u in problem.z.U]
 
 ### VISUALIZE AFTER OPTIMIZATION ###
 X, U = problem.z.X, problem.z.U
 t = (0:(Nk-1)) .* dt
 T_surface = [reverse(reshape(Array(x[1:nsvox] .* 1e3), Nx, Ny), dims=1) for x in X]
 ŷ_surface = [reverse(reshape(Array(x[(nvox+1):(nvox+nsvox)]), Nx, Ny), dims=1) for x in X]
-P_surface = [reverse(reshape(Array(u ./ (l * 1e3)^2), Nx, Ny), dims=1) for u in U]
+P_surface = [reverse(reshape(Array((pbf_powerfield.B*u)[1:nsvox] .* (l^3 * ρ * cₚ) ./ (l * 1e3)^2), Nx, Ny), dims=1) for u in U]
 Pdmax = round(maximum([maximum(P) for P in P_surface]), sigdigits=1)
 
 y_surface = [1 .- exp.(-exp.(ŷ)) for ŷ in ŷ_surface]
@@ -198,4 +205,50 @@ anim = @animate for (t, P, T, y) in zip(t, P_surface, T_surface, y_surface)
 end
 gif(anim, "optimized_$(n_subsample).mp4", fps=(1 / dt))
 
+seq, dwell = powerfield_to_sequence(dt, 1 / ω, 1e-6, [Array(u) for u in U[1:(end-Nkc)]])
+
+tempering_sim = Tempering(lnA, n, E, Ty(dwell); num=nvox)
+pbf_powerfield_sim = PBFPowerField(Nx, Ny, Nz, l, k, ρ, cₚ, T∞, T₀, h, Ty(dwell), Ty, V, M; σ=σ, buffer=buffer)
+dynamics_sim = PBFTempering(pbf_powerfield_sim, tempering_sim)
+
+U_spot = vcat([zeros(Nu) for _ in 1:3length(seq)])
+for (u, idx) in zip(U_spot, seq)
+    u[idx] = Pₛₑₜ
+end
+U_spot = [V(u) for u in U_spot]
+X_spot = [V(zeros(2nvox)) for u in U_spot]
+
+rollout!([dynamics_sim for _ in U_spot], 3*length(seq), x₀, X_spot, U_spot)
+
+### VISUALIZE AFTER OPTIMIZATION ###
+t = (0:(length(U_spot)-1)) .* dwell
+T_surface = [reverse(reshape(Array(x[1:nsvox] .* 1e3), Nx, Ny), dims=1) for x in X_spot]
+ŷ_surface = [reverse(reshape(Array(x[(nvox+1):(nvox+nsvox)]), Nx, Ny), dims=1) for x in X_spot]
+P_surface = [reverse(reshape(Array((pbf_powerfield_sim.B*u)[1:nsvox] .* (l^3 * ρ * cₚ) ./ (l * 1e3)^2), Nx, Ny), dims=1) for u in U_spot]
+Pdmax = round(maximum([maximum(P) for P in P_surface]), sigdigits=1)
+for k in 1:(length(U_spot)-1)
+    P_surface[k+1] .*= 0.1
+    P_surface[k+1] .+= 0.9 .* P_surface[k] 
+end
+
+y_surface = [1 .- exp.(-exp.(ŷ)) for ŷ in ŷ_surface]
+
+heatmap(abs.(y_surface[end] .- reverse(mask_img_subsampled, dims=1)), aspect_ratio=:equal, title="Error Magnitude")
+
+skip = 100
+anim = @animate for (t, P, T, y) in zip(t[1:skip:end], P_surface[1:skip:end], T_surface[1:skip:end], y_surface[1:skip:end])
+    title_str = @sprintf "Process at %.3f seconds" t
+
+    h1 = heatmap(P, aspect_ratio=:equal, ticks=false, c=:ice, cbar_title="Power Density (W/mm²)", clim=(0.0, Pdmax))
+    h2 = heatmap(T, aspect_ratio=:equal, ticks=false, c=:inferno, cbar_title="Temperature (K)", clim=(T∞ * 1e3, T_AC1 * 1e3), title=title_str)
+    h3 = heatmap(y, aspect_ratio=:equal, ticks=false, c=:acton, cbar_title="Fraction Tempered", clim=(0, 1))
+
+    plot(h1, h2, h3; layout=(1, 3), size=((12Nx) * 3, 12Ny + 110))
+end
+gif(anim, "approximated_$(n_subsample).mp4", fps=(1 / dwell / skip))
+
+xyz = get_coordinates(Nx - 2buffer, Ny - 2buffer, 1, l)
+points = [(xyz[:, seq][1], xyz[:, seq][2]) for seq in seq]
+points
 # save_object("solution_subsampled_$(n_subsample).jld2", P_surface)
+CSV.write("scan_strat_optimized.csv", Tables.table(vcat([[round(x, digits=9); round(y, digits=9); round(dt, digits=9)]' for (x,y) in points]...); header=["X", "Y", "Δt"]))
