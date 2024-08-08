@@ -9,6 +9,10 @@ using Printf
 
 import LinearAlgebra.mul!
 
+HVmin = 140.0
+HVmax = 400.0
+y_init = (HVmax - 380) / (HVmax - HVmin)
+
 # Type setup
 Ty = Float32
 V = CuVector{Ty}
@@ -20,7 +24,7 @@ mask_img = Ty.(Gray.(load("scotty_bw.png")))
 n_subsample = 5
 mask_img_blurred = imfilter(mask_img, Kernel.gaussian(n_subsample))
 mask_img_subsampled = mask_img_blurred[(n_subsample÷2):n_subsample:end, (n_subsample÷2):n_subsample:end]
-mask_img_subsampled = (1.0 .- Float64.(mask_img_subsampled)) .* 0.8 .+ 0.1
+mask_img_subsampled = (1.0 .- Float64.(mask_img_subsampled)) .* (0.9 - y_init) .+ y_init
 
 mask_top = vec(mask_img_subsampled)
 Nx, Ny = size(mask_img_subsampled)
@@ -29,7 +33,7 @@ buffer = 2
 nsvox = Ny * Nx
 nvox = nsvox * Nz
 Nu = (Nx - 2buffer) * (Ny - 2buffer)
-mask = vcat(mask_top, 0.1 * ones(Ty, nsvox * (Nz - 1)))
+mask = vcat(mask_top, y_init * ones(Ty, nsvox * (Nz - 1)))
 
 l = 1e-3 * n_subsample / 7 # m
 
@@ -58,7 +62,7 @@ Tboil = 3000.0e-3 # kK, boiling
 T_AC1 = 1000.0e-3 # kK
 
 # Environment parameters
-T∞ = (20.0 + 273.15) * 1e-3 # kK
+T∞ = (20.0 + Pₛₑₜ * 0.100 * 50 / ((1 / 2) * (0.1)^2 * sqrt(k / ρ / cₚ * 5.0) * ρ * cₚ) + 273.15) * 1e-3 # kK
 T₀ = T∞
 h = 0.0 # W / m^2 K (Vacuum)
 
@@ -74,7 +78,7 @@ power_mask = zeros(Bool, (Nx, Ny, Nz))
 power_mask[(1+buffer):(end-buffer), (1+buffer):(end-buffer), 1] .= true
 power_mask = vec(power_mask)
 
-x₀ = V([T∞ * ones(nvox); log(-log(1 - 0.1)) * ones(nvox)])
+x₀ = V([T∞ * ones(nvox); log(-log(1 - y_init)) * ones(nvox)])
 uw = (mask_top[power_mask[1:nsvox]] .+ 0.2) * Pₛₑₜ / sum((mask_top[power_mask[1:nsvox]] .+ 0.2))
 uw = V(uw)
 u0 = zeros(Nu)
@@ -218,7 +222,7 @@ end
 U_spot = [V(u) for u in U_spot]
 X_spot = [V(zeros(2nvox)) for u in U_spot]
 
-rollout!([dynamics_sim for _ in U_spot], 3*length(seq), x₀, X_spot, U_spot)
+rollout!([dynamics_sim for _ in U_spot], 3 * length(seq), x₀, X_spot, U_spot)
 
 ### VISUALIZE AFTER OPTIMIZATION ###
 t = (0:(length(U_spot)-1)) .* dwell
@@ -228,7 +232,7 @@ P_surface = [reverse(reshape(Array((pbf_powerfield_sim.B*u)[1:nsvox] .* (l^3 * �
 Pdmax = round(maximum([maximum(P) for P in P_surface]), sigdigits=1)
 for k in 1:(length(U_spot)-1)
     P_surface[k+1] .*= 0.1
-    P_surface[k+1] .+= 0.9 .* P_surface[k] 
+    P_surface[k+1] .+= 0.9 .* P_surface[k]
 end
 
 y_surface = [1 .- exp.(-exp.(ŷ)) for ŷ in ŷ_surface]
@@ -251,4 +255,9 @@ xyz = get_coordinates(Nx - 2buffer, Ny - 2buffer, 1, l)
 points = [(xyz[:, seq][1], xyz[:, seq][2]) for seq in seq]
 points
 # save_object("solution_subsampled_$(n_subsample).jld2", P_surface)
-CSV.write("scan_strat_optimized.csv", Tables.table(vcat([[round(x, digits=9); round(y, digits=9); round(dt, digits=9)]' for (x,y) in points]...); header=["X", "Y", "Δt"]))
+CSV.write("scan_strat_optimized.csv", Tables.table(vcat([[round(x, digits=9); round(y, digits=9); round(dwell, digits=9)]' for (x, y) in points]...); header=["X", "Y", "Δt"]))
+
+HV_final = HVmax .- (HVmax - HVmin) * y_surface[end]
+xs = xyz[1, :]
+ys = xyz[2, :]
+heatmap((l / 1e-3) * (1:Ny), (l / 1e-3) * (1:Nx), HV_final, aspect_ratio=:equal, clim=(180, 420), size=(600, 600))
