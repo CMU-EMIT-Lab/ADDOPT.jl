@@ -42,9 +42,10 @@ l = 1e-3 * n_subsample / 7 # m
 @show nsvox
 @show nvox
 
+η = 1.0
 σ = 1200e-6 / 1.35 # Spot diameter, m #250e-6
 ω = 2π * 178.446e3 # 1/s
-Pₛₑₜ = 3000.0 # W
+Pₛₑₜ = 3000.0 * η # W
 
 # Material parameters, taken at the solidus
 k = 31.1e3 # W / kK 
@@ -52,9 +53,13 @@ k = 31.1e3 # W / kK
 cₚ = 720.0e3 # J / kg kK 
 
 # Tempering parameters
-lnA::Ty = 38.005
-n::Ty = 0.051590
-E::Ty = 240.24e-3 # kJ / mol K
+lnA::Ty = 8.845 # 38.005
+n::Ty = 0.358 # 0.051590
+E::Ty = 56.277e-3 # 240.24 # kJ / mol K
+
+# lnA::Ty = 38.005
+# n::Ty = 0.051590
+# E::Ty = 240.24e-3 # kJ / mol K
 
 Tₛ = (1385.0 + 273.15) * 1e-3 # kK, solidus 
 Tₗ = (1450.0 + 273.15) * 1e-3 # kK, liquidus
@@ -145,6 +150,8 @@ eval_constraints!(problem, problem.z, problem.v)
 eval_penalty_multiplier!(problem, problem.v, 1e-1)
 @show constraint_violation(problem, problem.v)
 eval_lagrangian_cost(problem.v)
+U_naive = [Array(u) for u in problem.z.U]
+save_object("initialguess_U_$(n_subsample).jld2", U_naive)
 
 ### VISUALIZE BEFORE OPTIMIZATION ###
 X, U = problem.z.X, problem.z.U
@@ -172,9 +179,10 @@ gif(anim, "unoptimized_$(n_subsample).mp4", fps=(1 / dt))
 ### OPTIMIZE ###
 @show eval_cost(problem)
 @time al_ilqr!(problem; ctol=1e-4, μ=0.1, ϕ=3.0, verbosity=3, ρi=1e-10, tol=1e-4, gtol=Pₛₑₜ / Nu / 100)
-# @profview al_ilqr!(problem; ctol=1e-4, μ=0.1, ϕ=3.0, verbosity=2, ρi=1e-10, tol=1e-4, gtol=Pₛₑₜ / Nu / 100)
+@time al_ilqr!(problem; ctol=1e-4, μ=0.1, ϕ=3.0, verbosity=3, ρi=1e-10, tol=1e-4, gtol=Pₛₑₜ / Nu / 100)
 @show eval_cost(problem)
-U_opt = [copy(u) for u in problem.z.U]
+U_opt = [Array(u) for u in problem.z.U]
+save_object("solution_U_new_$(n_subsample).jld2", U_opt)
 
 ### VISUALIZE AFTER OPTIMIZATION ###
 X, U = problem.z.X, problem.z.U
@@ -185,14 +193,6 @@ P_surface = [reverse(reshape(Array((pbf_powerfield.B*u)[1:nsvox] .* (l^3 * ρ * 
 Pdmax = round(maximum([maximum(P) for P in P_surface]), sigdigits=1)
 
 y_surface = [1 .- exp.(-exp.(ŷ)) for ŷ in ŷ_surface]
-
-# heatmap(T_surface[end], aspect_ratio=:equal, clim=(T∞, T_AC1))
-# heatmap(ŷ_surface[end], aspect_ratio=:equal, clim=(-2.5, 0.75))
-# heatmap(reverse(log.(-log.(1 .- mask_img_subsampled)), dims=1), aspect_ratio=:equal, clim=(-2.5, 0.75))
-# heatmap(P_surface[end-1], aspect_ratio=:equal)
-# heatmap(ŷ_surface[end] .- reverse(log.(-log.(1 .- mask_img_subsampled)), dims=1), aspect_ratio=:equal, title="Error")
-heatmap(abs.(y_surface[end] .- reverse(mask_img_subsampled, dims=1)), aspect_ratio=:equal, title="Error Magnitude")
-
 
 anim = @animate for (t, P, T, y) in zip(t, P_surface, T_surface, y_surface)
     title_str = @sprintf "Process at %.3f seconds" t
@@ -207,6 +207,7 @@ gif(anim, "optimized_$(n_subsample).mp4", fps=(1 / dt))
 
 seq, dwell = powerfield_to_sequence(dt, 1 / ω, 1e-6, [Array(u) for u in U[1:(end-Nkc)]])
 
+process = problem = 0
 tempering_sim = Tempering(lnA, n, E, Ty(dwell); num=nvox)
 pbf_powerfield_sim = PBFPowerField(Nx, Ny, Nz, l, k, ρ, cₚ, T∞, T₀, h, Ty(dwell), Ty, V, M; σ=σ, buffer=buffer)
 dynamics_sim = PBFTempering(pbf_powerfield_sim, tempering_sim)
@@ -225,17 +226,15 @@ t = (0:(length(U_spot)-1)) .* dwell
 T_surface = [reverse(reshape(Array(x[1:nsvox] .* 1e3), Nx, Ny), dims=1) for x in X_spot]
 ŷ_surface = [reverse(reshape(Array(x[(nvox+1):(nvox+nsvox)]), Nx, Ny), dims=1) for x in X_spot]
 P_surface = [reverse(reshape(Array((pbf_powerfield_sim.B*u)[1:nsvox] .* (l^3 * ρ * cₚ) ./ (l * 1e3)^2), Nx, Ny), dims=1) for u in U_spot]
-Pdmax = round(maximum([maximum(P) for P in P_surface]), sigdigits=1)
-for k in 1:(length(U_spot)-1)
-    P_surface[k+1] .*= 0.1
-    P_surface[k+1] .+= 0.9 .* P_surface[k]
-end
 
 y_surface = [1 .- exp.(-exp.(ŷ)) for ŷ in ŷ_surface]
 
 heatmap(abs.(y_surface[end] .- reverse(mask_img_subsampled, dims=1)), aspect_ratio=:equal, title="Error Magnitude")
 
 skip = 100
+for k in (skip+1):skip:(length(U_spot))
+    P_surface[k] .= sum(P_surface[(k-skip):(k-1)]) ./ skip
+end
 anim = @animate for (t, P, T, y) in zip(t[1:skip:end], P_surface[1:skip:end], T_surface[1:skip:end], y_surface[1:skip:end])
     title_str = @sprintf "Process at %.3f seconds" t
 
@@ -250,10 +249,4 @@ gif(anim, "approximated_$(n_subsample).mp4", fps=(1 / dwell / skip))
 xyz = get_coordinates(Nx - 2buffer, Ny - 2buffer, 1, l)
 points = [(xyz[:, seq][1], xyz[:, seq][2]) for seq in seq]
 points
-# save_object("solution_subsampled_$(n_subsample).jld2", P_surface)
 CSV.write("scan_strat_optimized.csv", Tables.table(vcat([[round(x, digits=9); round(y, digits=9); round(dwell, digits=9)]' for (x, y) in points]...); header=["X", "Y", "Δt"]))
-
-HV_final = HVmax .- (HVmax - HVmin) * y_surface[end]
-xs = xyz[1, :]
-ys = xyz[2, :]
-heatmap((l / 1e-3) * (1:Ny), (l / 1e-3) * (1:Nx), HV_final, aspect_ratio=:equal, clim=(180, 420), size=(600, 600))
