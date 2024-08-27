@@ -24,7 +24,7 @@ def PlanOptiSpots(x, y, power, dwell, number, loc):
     from obplib.TimedPoints import TimedPoints
     from obplib.Beamparameters import Beamparameters
 
-    spot_size = 94
+    spot_size = 92
     # time = int(time * 1e6)
     points = []
     for i in range(len(x)):
@@ -53,7 +53,7 @@ def PlanOptiLineSpots(x, y, power, dwell, scanname):
     from obplib.TimedPoints import TimedPoints
     from obplib.Beamparameters import Beamparameters
 
-    spot_size = 94
+    spot_size = 92
     # time = int(time * 1e6)
     # times = []
     # points = []
@@ -198,23 +198,26 @@ if __name__ == "__main__":
     # This is for the 6x6 grid we did, edit position as needed sorry for the hard code :D 
     xloc, yloc = 0,0
     positions = {
-        (0,0): [-xwidth-spacing, -ywidth-spacing],
-        (0,1): [-xwidth-spacing, 0],
-        (0,2): [-xwidth-spacing, +ywidth+spacing],
-        (0,3): [-xwidth-spacing, 2*(+ywidth+spacing)],
-        (1,0): [0, -ywidth-spacing],
-        (1,1): [0, 0],
-        (1,2): [0, +ywidth+spacing],
-        (1,3): [0, 2*(+ywidth+spacing)],
-        (2,0): [+xwidth+spacing, -ywidth-spacing],
-        (2,1): [+xwidth+spacing, 0],
-        (2,2): [+xwidth+spacing, +ywidth+spacing],
-        (2,3): [+xwidth+spacing, 2*(+ywidth+spacing)]
+        (0,0): [-14e3, 6e3]
     }
+    # positions = {
+    #     (0,0): [-xwidth-spacing, -ywidth-spacing],
+    #     (0,1): [-xwidth-spacing, 0],
+    #     (0,2): [-xwidth-spacing, +ywidth+spacing],
+    #     (0,3): [-xwidth-spacing, 2*(+ywidth+spacing)],
+    #     (1,0): [0, -ywidth-spacing],
+    #     (1,1): [0, 0],
+    #     (1,2): [0, +ywidth+spacing],
+    #     (1,3): [0, 2*(+ywidth+spacing)],
+    #     (2,0): [+xwidth+spacing, -ywidth-spacing],
+    #     (2,1): [+xwidth+spacing, 0],
+    #     (2,2): [+xwidth+spacing, +ywidth+spacing],
+    #     (2,3): [+xwidth+spacing, 2*(+ywidth+spacing)]
+    # }
 
     PlanOptiSpots(
-        xspots*1e6-centerx+positions[xloc,yloc][0],
-        yspots*1e6-centery+positions[xloc,yloc][1],
+        xspots*1e6+positions[xloc,yloc][0] - xwidth, #-centerx,
+        yspots*1e6+positions[xloc,yloc][1], #-centery,
         power=3000,
         dwell=plan[filename]['T'],
         number=filename.split('.')[0], # Both number and loc show up in the file name 
