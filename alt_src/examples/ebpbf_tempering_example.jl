@@ -7,11 +7,12 @@ using CUDA
 using CSV, Tables
 using Printf
 
-import LinearAlgebra.mul!
-
-HVmin = 140.0
-HVmax = 400.0
-y_init = (HVmax - 380) / (HVmax - HVmin)
+HVmin = 135.0
+HVmax = 404.0
+# HVmin = 140.0
+# HVmax = 400.0
+y_init = (HVmax - 365) / (HVmax - HVmin)
+# y_init = (HVmax - 380) / (HVmax - HVmin)
 
 # Type setup
 Ty = Float32
@@ -136,11 +137,6 @@ final_cost = QuadraticCost(Qf, R, x̄, ū)
 push!(costs, final_cost)
 
 problem = Problem(x₀, process, costs, constraints, M)
-
-function mul!(Y, A, B::Diagonal{T,CuVector{T}}) where {T}
-    Y .= A
-    Y .*= B.diag'
-end
 
 U0 = vcat([uw for k in 1:(Nk-Nkc)], [u0 for k in 1:Nkc])
 @time rollout!(problem, U0)
