@@ -5,13 +5,6 @@ using CUDA
 using Printf
 
 
-import LinearAlgebra.mul!
-
-function mul!(Y, A, B::Diagonal{T,CuVector{T}}) where {T}
-    Y .= A
-    Y .*= B.diag'
-end
-
 include("dynamics/Dynamics.jl")
 include("costs/Cost.jl")
 include("constraints/Constraint.jl")
