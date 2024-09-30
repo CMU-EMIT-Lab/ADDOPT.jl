@@ -62,6 +62,16 @@ end
 
 ######## Begin tuning ########
 
+HVmin = 135.0
+HVmax = 404.0
+# HVmin = 140.0
+# HVmax = 400.0
+y_init = (HVmax - 365) / (HVmax - HVmin)
+mask_img_subsampled = reverse(Gray.(load("scotty_target_subs5.png")), dims=1)
+HV_goal = ((1.0 .- Float64.(mask_img_subsampled)) .* (0.9 - y_init) .+ y_init)
+HV_goal = HVmax .-  (HVmax - HVmin) .* HV_goal
+
+
 # Geometric parameters
 HV_mask = reverse(.!Bool.(Gray.(load("scotty_mask_subs5.png"))), dims=1)
 Nx, Ny = size(HV_mask)
@@ -117,7 +127,7 @@ U_arr = [[V(y) for y in x[3]] for x in data]
 HV_arr = [x[4] for x in data]
 HV_ref = []
 
-for (HV_init, U, HV, HVf1) in zip(HV_init, U_arr, HV_arr, HVf_f1)
+for (HV_init, U, HV) in zip(HV_init, U_arr, HV_arr)
     HVf = simulate_process(lnA, n, E, HVmax, HVmin, η, pbf_powerfield, U, HV_init, dt, nvox, Nx, Ny, T∞)
     HVr = align_images(HVf, HV)[1:Nx, 1:Ny] # HVf1
     push!(HV_ref, HVr)
@@ -166,22 +176,24 @@ HVf_0 = [simulate_process(lnA, n, E, HVmax, HVmin, η, pbf_powerfield, U, HV_ini
 
 using LineSearches
 
-Jc = Inf
+# Jc = Inf
 θ = copy(θ₀)
-inner_optimizer = BFGS(linesearch=LineSearches.BackTracking(order=3))
-for _ in 1:(2^6)
-    # try
-    θ₀ = Float32.([lnA * n * 2 * rand(); 1 / rand(); n * (0.15 * rand() + 0.15); HVmax; HVmin; 0.6 + rand() * 0.4])
-    clear!(df)
-    res = optimize(J, J_grad!, lower_bounds, upper_bounds, θ₀, Fminbox(inner_optimizer), Optim.Options(show_trace=true, iterations=100))
-    # res = optimize(df, bounds, θ₀, IPNewton(), Optim.Options(show_trace=true, iterations=1000))
-    if res.minimum < Jc
-        @show θ = res.minimizer
-        @show Jc = res.minimum
-    end
-    # catch
-    # end
-end
+# inner_optimizer = BFGS(linesearch=LineSearches.BackTracking(order=3))
+# for _ in 1:(2^6)
+#     # try
+#     θ₀ = Float32.([lnA * n * 2 * rand(); 1 / rand(); n * (0.15 * rand() + 0.15); HVmax; HVmin; 0.6 + rand() * 0.4])
+#     clear!(df)
+#     res = optimize(J, J_grad!, lower_bounds, upper_bounds, θ₀, Fminbox(inner_optimizer), Optim.Options(show_trace=true, iterations=100))
+#     # res = optimize(df, bounds, θ₀, IPNewton(), Optim.Options(show_trace=true, iterations=1000))
+#     if res.minimum < Jc
+#         @show θ = res.minimizer
+#         @show Jc = res.minimum
+#     end
+#     # catch
+#     # end
+# end
+
+θ1 = Ty.([0.358 * 8.845, 1 / 0.358, 0.358 * 56.277e-3, 404.0, 135.0, 1.0])
 
 nlnA, invn, nE, HVmax, HVmin, η = θ1
 n = 1 / invn
@@ -216,3 +228,9 @@ pe = plot(pe1, pe2, pe3, layout=(3, 1), size=(length(U_arr) * 550, 3 * 600))
     # (8.648193f0, 0.7761927f0, 0.045957092f0, 391.70642f0, 199.9739f0, 0.9365894f0)
 θ1 = Ty.([0.358 * 8.845, 1 / 0.358, 0.358 * 56.277e-3, 404.0, 135.0, 1.0])
 @show J(θ1)
+
+@show rmse_final = sqrt(sum(((HV_ref[4] .- HV_goal) .* HV_mask).^2) ./ sum(HV_mask))
+@show mae_final = sum(abs.((HV_ref[4] .- HV_goal) .* HV_mask)) ./ sum(HV_mask)
+
+@show rmse_final = sqrt(sum(((HV_ref[4] .- HV_goal) .* HV_mask ./ HV_goal).^2) ./ sum(HV_mask)) * 100
+@show mae_final = sum(abs.((HV_ref[4] .- HV_goal) .* HV_mask ./ HV_goal)) ./ sum(HV_mask) * 100

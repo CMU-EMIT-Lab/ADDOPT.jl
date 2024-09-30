@@ -8,7 +8,7 @@ using Random
 using JLD2
 
 import LinearAlgebra.mul!
-function mul!(Y, A, B::Diagonal{T,CuVector{T}}) where {T}
+function mul!(Y::CuMatrix{T}, A::Adjoint{T, CuMatrix{T}}, B::Diagonal{T,CuVector{T}}) where {T}
     Y .= A
     Y .*= B.diag'
 end
@@ -20,7 +20,7 @@ M = CuMatrix{Ty}
 
 buffer = 3
 # Geometric parameters
-mask_img = Bool.(Gray.(load("scotty_mask.png")))
+mask_img = Bool.(Gray.(load("trial_old.png")))
 mask_red = mask_img[(1+buffer):(end-buffer), (1+buffer):(end-buffer)]
 mask_top = vec(mask_img)
 mask_red_top = vec(mask_red)
@@ -30,7 +30,7 @@ Nz = 4
 nsvox = Ny * Nx
 nvox = nsvox * Nz
 mask = vcat(mask_top, zeros(Bool, nsvox * (Nz - 1)))
-l = 200e-6 # m
+l = 400e-6 # m
 @show nsvox
 Nu = (Ny - 2buffer) * (Nx - 2buffer)
 
@@ -55,7 +55,7 @@ T∞ = (20.0 + 273.15) * 1e-3 # kK
 T₀ = T∞
 h = 0.0 # W / m^2 K (Vacuum)
 
-dt = 3000e-6 # s, aka 1000μs
+dt = 1000e-6 # s, aka 1000μs
 
 Tmax = Tboil * ones(nvox)
 Tmax[.!mask] .= Tₛ - 25e-3
@@ -145,9 +145,9 @@ T_surface_spotmelt = [reshape(reverse(Array(x[1:nsvox]), dims=1), Nx, Ny) for x 
 P_surface_spotmelt = [reshape(reverse(Array(u), dims=1), Nx - 2buffer, Ny - 2buffer) for u in U_spotmelt]
 
 
-T_surface_pf = load_object("T_pf.jld2")
-T_surface_raster = load_object("T_raster.jld2")
-T_surface_spotmelt = load_object("T_spotmelt.jld2")
+# T_surface_pf = load_object("T_pf.jld2")
+# T_surface_raster = load_object("T_raster.jld2")
+# T_surface_spotmelt = load_object("T_spotmelt.jld2")
 
 xvox, yvox = Nx÷2, Ny÷2
 T_samp_pf = [T[xvox,yvox] for T in T_surface_pf]
@@ -171,6 +171,6 @@ save_object("T_pf.jld2", T_surface_pf)
 save_object("T_raster.jld2", T_surface_raster)
 save_object("T_spotmelt.jld2", T_surface_spotmelt)
 
-@gif for T in T_surface_spotmelt
+@gif for T in T_surface_pf
     heatmap(T, aspect_ratio=:equal, clim=(.500, 2.100))
 end
