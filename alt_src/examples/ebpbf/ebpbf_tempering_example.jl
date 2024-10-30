@@ -44,7 +44,7 @@ l = 1e-3 * n_subsample / 7 # m
 @show nvox
 
 η = 1.0
-σ = 1200e-6 / 1.35 # Spot diameter, m #250e-6
+σ = 1200e-6 / 1.35 # Spot diameter, m
 ω = 2π * 178.446e3 # 1/s
 Pₛₑₜ = 3000.0 * η # W
 

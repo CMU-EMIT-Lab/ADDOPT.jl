@@ -10,6 +10,12 @@ function al_ilqr!(problem::Problem; μ=0.1, ϕ=10.0, maxiters=100, inneriters=10
         λ[k] .= 0
     end
 
+    J = eval_cost(problem)
+    cviol = constraint_violation(problem)
+    if verbosity ≥ 1
+        @printf "AL-iLQR iteration %03d - J: %.5e - |c|∞: %.5e - μ: %.4e\n" 0 J cviol μ
+    end
+
     for iter in 1:maxiters
         J = ilqr!(problem, μ; ilqr_iters=inneriters, tol=tol, gtol=gtol, verbosity=verbosity, ρi=ρi)
         cviol = constraint_violation(problem)

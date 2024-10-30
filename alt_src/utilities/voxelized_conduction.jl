@@ -15,20 +15,20 @@ function discretize_linear_dynamics(A, B, e, dt)
 end
 
 function matrices_for_voxel_conduction(nx, ny, nz, l, α, C, h, T₀, T∞, σ, buffer)
-    L = cu(voxel_laplacian(nx, ny, nz))
-    A∞ = Diagonal(cu(surface_voxels(nx, ny, nz))) .* l^2
-    A₀ = Diagonal(cu(volume_voxels(nx, ny, nz))) * l^2
+    L = voxel_laplacian(nx, ny, nz)
+    A∞ = Diagonal(surface_voxels(nx, ny, nz)) .* l^2
+    A₀ = Diagonal(volume_voxels(nx, ny, nz)) .* l^2
 
     power_mask = zeros(Bool, (nx, ny, nz))
     power_mask[(1+buffer):(end-buffer), (1+buffer):(end-buffer), 1] .= true
-    power_mask = cu(vec(power_mask))
+    power_mask = vec(power_mask)
 
     A = -((α / l^2) .* L .+ (α / l^4) .* A₀ .+ (h / C) .* A∞)
-    B = (σ == 0.0) ? (A∞ ./ ((l^2) * C)) : (cu(pairwise_gaussian_integral(nx, ny, nz, l, σ)) .* cu(surface_voxels(nx, ny, nz)) ./ C)
+    B = (σ == 0.0) ? (A∞ ./ ((l^2) * C)) : (pairwise_gaussian_integral(nx, ny, nz, l, σ) .* surface_voxels(nx, ny, nz) ./ C)
     B = B[:, power_mask]
-    e = ((α / l^4) .* A₀ .* T₀ + (h / C) .* A∞ .* T∞) * cu(ones(nx * ny * nz))
+    e = ((α / l^4) .* A₀ .* T₀ .+ (h / C) .* A∞ .* T∞) * ones(nx * ny * nz)
 
-    return A, B, e
+    return cu(A), cu(B), cu(e)
 end
 
 function surface_voxels(nx, ny, nz)
