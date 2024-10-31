@@ -47,6 +47,7 @@ Nu = (Ny - 2buffer) * (Nx - 2buffer)
 σ = 250e-6 / 1.35   # Spot diameter, m
 ω = 2π * 178.446e3  # 1/s
 Pₛₑₜ = 3000.0e-3     # kW
+tmin = 1e-6
 
 # Material parameters, taken at the solidus
 k = 31.1    # W / mK 
@@ -137,6 +138,22 @@ P_surface_unopt = [reshape(reverse(u, dims=1) .* 1e3 / (l * 1e3)^2, Nx - 2buffer
 P_max = round(maximum([maximum(P) for P in P_surface_unopt]), sigdigits=1)
 animate_pf(t, P_surface_unopt, T_surface_unopt, "unoptimized_$(example_number)", P_max)
 
+nvox_fine = 2Nx * 2Ny * Nz÷2
+Nu_fine = 2(Nx-2buffer) * 2(Ny-2buffer)
+steps_per_spot = 5
+mask_fine = refine_grid(reshape(mask_reduced_top, Nx-2buffer, Ny-2buffer), 2)
+xyz = get_coordinates(2(Nx-2buffer), 2(Ny-2buffer), 1, l/2)
+px = xyz[1, :]
+py = xyz[2, :]
+
+U_unopt_build = problem.z.U[1:Nkb]
+U_unopt_build_fine = [cu(vec(refine_grid(reshape(Array(u), Nx-2buffer, Ny-2buffer), 2))) ./ 2^2 for u in U_unopt_build]
+
+seq, dwell, U_approx = powerfield_to_sequence_with_traverse(dt, 1 / ω, tmin, U_unopt_build_fine, px, py, l/2, Pₛₑₜ, σ; steps_per_spot=steps_per_spot)
+points = [(xyz[:, seq][1], xyz[:, seq][2]) for seq in seq]
+CSV.write("scan_strat_unoptimized_$(example_number).csv", Tables.table(vcat([[round(x, digits=9); round(y, digits=9); round(dwell, digits=9)]' for (x, y) in points]...); header=["X", "Y", "Δt"]))
+
+
 ##### Run Optimization #####
 @show eval_cost(problem)
 @time al_ilqr!(problem; ctol=1e-6, μ=0.1, ϕ=3.0, verbosity=2, ρi=1e-10, tol=1e-6, gtol=Pₛₑₜ / Nu / 100)
@@ -165,39 +182,34 @@ plot!(std_comp, t .* 1e3, Toσ, linewidth=3, thickness_scaling=1, label="Optimiz
 ##### Visualize Cumulative Variance #####
 # var_comp_int = 
 
-U_opt_build = problem.z.U[1:Nkb]
-problem = process = 0
 GC.gc()
 CUDA.reclaim()
 
-nvox_fine = 2Nx * 2Ny * Nz÷2
-Nu_fine = 2(Nx-2buffer) * 2(Ny-2buffer)
+U_opt_build = problem.z.U[1:Nkb]
 U_opt_build_fine = [cu(vec(refine_grid(reshape(Array(u), Nx-2buffer, Ny-2buffer), 2))) ./ 2^2 for u in U_opt_build]
 
-xyz = get_coordinates(2(Nx-2buffer), 2(Ny-2buffer), 1, l/2)
-px = xyz[1, :]
-py = xyz[2, :]
-tmin = 1e-6
-steps_per_spot = 5
-@time seq, dwell, U_approx = powerfield_to_sequence_with_traverse(dt, 1 / ω, tmin, U_opt_build_fine, px, py, l/2, Pₛₑₜ, σ; steps_per_spot=steps_per_spot)
-
-u0_fine = cu(zeros(Nu_fine))
-f = round(Int, dt / tmin)
-U_approx = [U_approx[i, :] for i in 1:size(U_approx, 1)]
-U_approx = vcat(U_approx, [u0_fine for k in 1:(Nkc*f)])
-X_approx = [CUDA.zeros(nvox_fine) for i in 1:(Nk*f)]
-
-dynamics_approx = PBFPowerField(2Nx, 2Ny, Nz÷2, l/2, k, ρ, cₚ, T∞, T₀, h, tmin, Ty, V, M; buffer=2buffer)
-
-rollout!([dynamics_approx for k in 1:(Nk*f)], Nk * f, cu(ones(nvox_fine).*T∞), X_approx, U_approx)
-U_approx = [Array(u) for u in view(U_approx, 1:100:(Nk*f))]
-X_approx = [Array(x) for x in view(X_approx, 1:100:(Nk*f))]
-t_approx = (1:100:(Nk*f)) .* tmin
-T_surface_approx = [reshape(reverse(x[1:(2Nx*2Ny)], dims=1) .* 1e3, 2Nx, 2Ny) for x in X_approx]
-P_surface_approx = [reshape(reverse(u, dims=1) .* 1e3 / (l/2 * 1e3)^2, 2(Nx - 2buffer), 2(Ny - 2buffer)) for u in U_approx]
-P_max = round(maximum([maximum(P) for P in P_surface_approx]), sigdigits=1)
-
-animate_pf(t_approx, P_surface_approx, T_surface_approx, "approximated_$(example_number)", P_max)
-
+seq, dwell, U_approx = powerfield_to_sequence_with_traverse(dt, 1 / ω, tmin, U_opt_build_fine, px, py, l/2, Pₛₑₜ, σ; steps_per_spot=steps_per_spot)
 points = [(xyz[:, seq][1], xyz[:, seq][2]) for seq in seq]
 CSV.write("scan_strat_optimized_$(example_number).csv", Tables.table(vcat([[round(x, digits=9); round(y, digits=9); round(dwell, digits=9)]' for (x, y) in points]...); header=["X", "Y", "Δt"]))
+
+# u0_fine = cu(zeros(Nu_fine))
+# f = round(Int, dt / tmin)
+# U_approx = [U_approx[i, :] for i in 1:size(U_approx, 1)]
+# U_approx = vcat(U_approx, [u0_fine for k in 1:(Nkc*f)])
+# X_approx = [CUDA.zeros(nvox_fine) for i in 1:(Nk*f)]
+
+# dynamics_approx = PBFPowerField(2Nx, 2Ny, Nz÷2, l/2, k, ρ, cₚ, T∞, T₀, h, tmin, Ty, V, M; buffer=2buffer)
+
+# rollout!([dynamics_approx for k in 1:(Nk*f)], Nk * f, cu(ones(nvox_fine).*T∞), X_approx, U_approx)
+# U_approx = [Array(u) for u in view(U_approx, 1:100:(Nk*f))]
+# X_approx = [Array(x) for x in view(X_approx, 1:100:(Nk*f))]
+# t_approx = (1:100:(Nk*f)) .* tmin
+# T_surface_approx = [reshape(reverse(x[1:(2Nx*2Ny)], dims=1) .* 1e3, 2Nx, 2Ny) for x in X_approx]
+# P_surface_approx = [reshape(reverse(u, dims=1) .* 1e3 / (l/2 * 1e3)^2, 2(Nx - 2buffer), 2(Ny - 2buffer)) for u in U_approx]
+# P_max = round(maximum([maximum(P) for P in P_surface_approx]), sigdigits=1)
+
+# animate_pf(t_approx, P_surface_approx, T_surface_approx, "approximated_$(example_number)", P_max)
+
+seq = shuffle(findall(>(0), vec(mask_fine)))
+points = [(xyz[:, seq][1], xyz[:, seq][2]) for seq in seq]
+CSV.write("scan_strat_random_$(example_number).csv", Tables.table(vcat([[round(x, digits=9); round(y, digits=9); round(50e-6, digits=9)]' for (x, y) in points]...); header=["X", "Y", "Δt"]))
