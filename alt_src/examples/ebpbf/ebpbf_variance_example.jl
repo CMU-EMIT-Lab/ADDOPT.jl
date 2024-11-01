@@ -27,8 +27,9 @@ V = CuVector{Ty}
 M = CuMatrix{Ty}
 
 # Geometric parameters
+for example_number in 1:6
+
 buffer = 2
-example_number = 4
 mask_img = Bool.(Gray.(load("alt_src/examples/ebpbf/example_$(example_number).png")))
 mask_reduced = mask_img[(1+buffer):(end-buffer), (1+buffer):(end-buffer)]
 mask_top = vec(mask_img)
@@ -47,7 +48,6 @@ Nu = (Ny - 2buffer) * (Nx - 2buffer)
 σ = 250e-6 / 1.35   # Spot diameter, m
 ω = 2π * 178.446e3  # 1/s
 Pₛₑₜ = 3000.0e-3     # kW
-tmin = 1e-6
 
 # Material parameters, taken at the solidus
 k = 31.1    # W / mK 
@@ -136,11 +136,12 @@ X_unopt = [Array(x) for x in problem.z.X]
 T_surface_unopt = [reshape(reverse(x[1:nsvox], dims=1) .* 1e3, Nx, Ny) for x in X_unopt]
 P_surface_unopt = [reshape(reverse(u, dims=1) .* 1e3 / (l * 1e3)^2, Nx - 2buffer, Ny - 2buffer) for u in U_unopt]
 P_max = round(maximum([maximum(P) for P in P_surface_unopt]), sigdigits=1)
-animate_pf(t, P_surface_unopt, T_surface_unopt, "unoptimized_$(example_number)", P_max)
+# animate_pf(t, P_surface_unopt, T_surface_unopt, "unoptimized_$(example_number)", P_max)
 
 nvox_fine = 2Nx * 2Ny * Nz÷2
 Nu_fine = 2(Nx-2buffer) * 2(Ny-2buffer)
-steps_per_spot = 5
+steps_per_spot = 50
+tmin = 1e-6 / 10
 mask_fine = refine_grid(reshape(mask_reduced_top, Nx-2buffer, Ny-2buffer), 2)
 xyz = get_coordinates(2(Nx-2buffer), 2(Ny-2buffer), 1, l/2)
 px = xyz[1, :]
@@ -149,14 +150,14 @@ py = xyz[2, :]
 U_unopt_build = problem.z.U[1:Nkb]
 U_unopt_build_fine = [cu(vec(refine_grid(reshape(Array(u), Nx-2buffer, Ny-2buffer), 2))) ./ 2^2 for u in U_unopt_build]
 
-seq, dwell, U_approx = powerfield_to_sequence_with_traverse(dt, 1 / ω, tmin, U_unopt_build_fine, px, py, l/2, Pₛₑₜ, σ; steps_per_spot=steps_per_spot)
+seq, dwell = powerfield_to_sequence_with_traverse(dt, 1 / ω, tmin, U_unopt_build_fine, px, py, l/2, Pₛₑₜ, σ; steps_per_spot=steps_per_spot)
 points = [(xyz[:, seq][1], xyz[:, seq][2]) for seq in seq]
 CSV.write("scan_strat_unoptimized_$(example_number).csv", Tables.table(vcat([[round(x, digits=9); round(y, digits=9); round(dwell, digits=9)]' for (x, y) in points]...); header=["X", "Y", "Δt"]))
 
 
 ##### Run Optimization #####
 @show eval_cost(problem)
-@time al_ilqr!(problem; ctol=1e-6, μ=0.1, ϕ=3.0, verbosity=2, ρi=1e-10, tol=1e-6, gtol=Pₛₑₜ / Nu / 100)
+@time al_ilqr!(problem; ctol=1e-6, μ=0.1, ϕ=3.0, verbosity=1, ρi=1e-10, tol=1e-6, gtol=Pₛₑₜ / Nu / 100)
 @show eval_cost(problem)
 U_opt = [Array(u) for u in problem.z.U]
 X_opt = [Array(x) for x in problem.z.X]
@@ -165,7 +166,7 @@ X_opt = [Array(x) for x in problem.z.X]
 T_surface_opt = [reshape(reverse(x[1:nsvox], dims=1) .* 1e3, Nx, Ny) for x in X_opt]
 P_surface_opt = [reshape(reverse(u, dims=1) .* 1e3 / (l * 1e3)^2, Nx - 2buffer, Ny - 2buffer) for u in U_opt]
 P_max = round(maximum([maximum(P) for P in P_surface_opt]), sigdigits=1)
-animate_pf(t, P_surface_opt, T_surface_opt, "optimized_$(example_number)", P_max)
+# animate_pf(t, P_surface_opt, T_surface_opt, "optimized_$(example_number)", P_max)
 
 ##### Calculate Statistics #####
 T0m = [mean(x[mask]) * 1e3 for x in X_unopt]
@@ -174,21 +175,24 @@ Tom = [mean(x[mask]) * 1e3 for x in X_opt]
 Toσ = [std(x[mask]) * 1e3 for x in X_opt]
 
 ##### Visualize Standard Deviation #####
-std_comp = plot(xlabel="Time (ms)", ylabel="Standard Deviation of Temperature (K)", tickfontsize=14, labelfontsize=16, legendfontsize=14, size=(800, 800), widen=true, handlelength=8, grid=false)
-plot!(std_comp, x_foreground_color_axis=:black, y_foreground_color_axis=:black)
-plot!(std_comp, t .* 1e3, T0σ, linewidth=3, thickness_scaling=1, label="Uniform Power, Ideal", c="lightblue")
-plot!(std_comp, t .* 1e3, Toσ, linewidth=3, thickness_scaling=1, label="Optimized Power, Ideal", c="indianred")
+# std_comp = plot(xlabel="Time (ms)", ylabel="Standard Deviation of Temperature (K)", tickfontsize=14, labelfontsize=16, legendfontsize=14, size=(800, 800), widen=true, handlelength=8, grid=false)
+# plot!(std_comp, x_foreground_color_axis=:black, y_foreground_color_axis=:black)
+# plot!(std_comp, t .* 1e3, T0σ, linewidth=3, thickness_scaling=1, label="Uniform Power, Ideal", c="lightblue")
+# plot!(std_comp, t .* 1e3, Toσ, linewidth=3, thickness_scaling=1, label="Optimized Power, Ideal", c="indianred")
 
 ##### Visualize Cumulative Variance #####
 # var_comp_int = 
 
-GC.gc()
-CUDA.reclaim()
-
 U_opt_build = problem.z.U[1:Nkb]
 U_opt_build_fine = [cu(vec(refine_grid(reshape(Array(u), Nx-2buffer, Ny-2buffer), 2))) ./ 2^2 for u in U_opt_build]
 
-seq, dwell, U_approx = powerfield_to_sequence_with_traverse(dt, 1 / ω, tmin, U_opt_build_fine, px, py, l/2, Pₛₑₜ, σ; steps_per_spot=steps_per_spot)
+problem = 0 
+process = 0
+dynamics = 0
+GC.gc()
+CUDA.reclaim()
+
+seq, dwell = powerfield_to_sequence_with_traverse(dt, 1 / ω, tmin, U_opt_build_fine, px, py, l/2, Pₛₑₜ, σ; steps_per_spot=steps_per_spot)
 points = [(xyz[:, seq][1], xyz[:, seq][2]) for seq in seq]
 CSV.write("scan_strat_optimized_$(example_number).csv", Tables.table(vcat([[round(x, digits=9); round(y, digits=9); round(dwell, digits=9)]' for (x, y) in points]...); header=["X", "Y", "Δt"]))
 
@@ -213,3 +217,5 @@ CSV.write("scan_strat_optimized_$(example_number).csv", Tables.table(vcat([[roun
 seq = shuffle(findall(>(0), vec(mask_fine)))
 points = [(xyz[:, seq][1], xyz[:, seq][2]) for seq in seq]
 CSV.write("scan_strat_random_$(example_number).csv", Tables.table(vcat([[round(x, digits=9); round(y, digits=9); round(50e-6, digits=9)]' for (x, y) in points]...); header=["X", "Y", "Δt"]))
+
+end
