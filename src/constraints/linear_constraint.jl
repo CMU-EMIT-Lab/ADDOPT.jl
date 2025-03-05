@@ -1,4 +1,5 @@
 
+export LinearConstraint
 struct LinearConstraint{T<:AbstractFloat,V<:AbstractVector{T},M<:AbstractMatrix{T}} <: Constraint{T}
     A_x_eq::M
     b_x_eq::V

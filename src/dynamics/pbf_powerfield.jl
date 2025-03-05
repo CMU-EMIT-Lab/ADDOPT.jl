@@ -1,3 +1,4 @@
+export PBFPowerField
 struct PBFPowerField{T<:AbstractFloat,V<:AbstractVector{T},M<:AbstractMatrix{T}} <: Dynamics{T}
     nx::Int
     ny::Int

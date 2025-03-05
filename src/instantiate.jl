@@ -1,8 +1,3 @@
-using Statistics
-using StatsBase
-using ProgressMeter
-using CUDA
-
 function powerfield_to_sequence(dt, τ, tmin, U)
     dwell = tmin * ceil(30τ / tmin)
     spots_per_step = ceil(Int, dt / dwell)

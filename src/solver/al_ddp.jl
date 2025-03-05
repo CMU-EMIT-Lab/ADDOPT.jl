@@ -1,5 +1,5 @@
 
-function al_ilqr!(problem::Problem; μ=0.1, ϕ=10.0, maxiters=100, inneriters=1000, tol=1e-4, gtol=1e-3, ctol=1e-6, verbosity=1, ρi=1e-10)
+function al_ddp!(problem::Problem; μ=0.1, ϕ=10.0, maxiters=100, inneriters=1000, tol=1e-4, gtol=1e-3, ctol=1e-6, verbosity=1, ρi=1e-10)
     process = problem.process
     N = process.Nk
     λ, c = problem.v.λ, problem.v.c
@@ -13,14 +13,14 @@ function al_ilqr!(problem::Problem; μ=0.1, ϕ=10.0, maxiters=100, inneriters=10
     J = eval_cost(problem)
     cviol = constraint_violation(problem)
     if verbosity ≥ 1
-        @printf "AL-iLQR iteration %03d - J: %.5e - |c|∞: %.5e - μ: %.4e\n" 0 J cviol μ
+        @printf "AL-DDP iteration %03d - J: %.5e - |c|∞: %.5e - μ: %.4e\n" 0 J cviol μ
     end
 
     for iter in 1:maxiters
-        J = ilqr!(problem, μ; ilqr_iters=inneriters, tol=tol, gtol=gtol, verbosity=verbosity, ρi=ρi)
+        J = ddp!(problem, μ; ddp_iters=inneriters, tol=tol, gtol=gtol, verbosity=verbosity, ρi=ρi)
         cviol = constraint_violation(problem)
         if verbosity ≥ 1
-            @printf "AL-iLQR iteration %03d - J: %.5e - |c|∞: %.5e - μ: %.4e\n" iter J cviol μ
+            @printf "AL-DDP iteration %03d - J: %.5e - |c|∞: %.5e - μ: %.4e\n" iter J cviol μ
         end
         # @info "$iter, ΔJ: $(round(ΔJ, digits=4)), μ: $(round(μ, digits=4))"
 
@@ -41,21 +41,21 @@ function al_ilqr!(problem::Problem; μ=0.1, ϕ=10.0, maxiters=100, inneriters=10
         μ = clamp(μ, 0.1, 1e8)
     end
 
-    @warn "Exceeded maximum iterations for AL-iLQR"
+    @warn "Exceeded maximum iterations for AL-DDP"
 end
 
-function ilqr!(problem::Problem, μ; ilqr_iters=1000, tol=1e-4, gtol=1e-3, verbosity=2, ρi=1e-8)
+function ddp!(problem::Problem, μ; ddp_iters=1000, tol=1e-4, gtol=1e-3, verbosity=2, ρi=1e-8)
     rollout!(problem)
     eval_constraints!(problem)
     eval_penalty_multiplier!(problem, problem.v, μ)
     ρ = 0.0
 
-    for iter in 1:ilqr_iters
+    for iter in 1:ddp_iters
         J_old = eval_augmented_cost(problem, problem.z, problem.v)
-        Δu_ff, ρ = ilqr_step!(problem, μ; verbosity=verbosity, ρi=ρi, ρ=ρ)
+        Δu_ff, ρ = ddp_step!(problem, μ; verbosity=verbosity, ρi=ρi, ρ=ρ)
         J_new = eval_augmented_cost(problem, problem.z, problem.v)
         if verbosity ≥ 2
-            @printf "iLQR iteration %03d - J: %.5e - ρ: %.5e - |Δu_ff|: %.5e\n" iter J_new ρ Δu_ff
+            @printf "DDP iteration %03d - J: %.5e - ρ: %.5e - |Δu_ff|: %.5e\n" iter J_new ρ Δu_ff
         end
 
         if abs(J_old - J_new) < tol && Δu_ff < gtol
@@ -63,11 +63,11 @@ function ilqr!(problem::Problem, μ; ilqr_iters=1000, tol=1e-4, gtol=1e-3, verbo
         end
     end
 
-    @warn "Exceed maximum iterations for iLQR"
+    @warn "Exceed maximum iterations for DDP"
     return -1.0
 end
 
-function ilqr_step!(problem::Problem, μ; ρi=1e-8, verbosity=3, ρ=0.0)
+function ddp_step!(problem::Problem, μ; ρi=1e-8, verbosity=3, ρ=0.0)
     ΔJ = Inf
     Δu_ff = 0.0
     eval_penalty_multiplier!(problem, problem.v, μ)

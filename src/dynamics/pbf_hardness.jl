@@ -1,4 +1,5 @@
 
+export PBFTempering
 struct PBFTempering{T<:AbstractFloat,V<:AbstractVector{T},M<:AbstractMatrix{T}} <: Dynamics{T}
     pbf_powerfield::PBFPowerField{T,V,M}
     tempering::Tempering{T}

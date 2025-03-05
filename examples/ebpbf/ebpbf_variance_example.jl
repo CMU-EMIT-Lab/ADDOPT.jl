@@ -1,4 +1,4 @@
-include("../../ADDOPT.jl")
+using ADDOPT
 using Plots
 using Profile
 using Images
@@ -30,7 +30,7 @@ M = CuMatrix{Ty}
 for example_number in 1:6
 
 buffer = 2
-mask_img = Bool.(Gray.(load("alt_src/examples/ebpbf/example_$(example_number).png")))
+mask_img = Bool.(Gray.(load("examples/ebpbf/example_$(example_number).png")))
 mask_reduced = mask_img[(1+buffer):(end-buffer), (1+buffer):(end-buffer)]
 mask_top = vec(mask_img)
 mask_reduced_top = vec(mask_reduced)
@@ -157,7 +157,7 @@ CSV.write("scan_strat_unoptimized_$(example_number).csv", Tables.table(vcat([[ro
 
 ##### Run Optimization #####
 @show eval_cost(problem)
-@time al_ilqr!(problem; ctol=1e-6, μ=0.1, ϕ=3.0, verbosity=1, ρi=1e-10, tol=1e-6, gtol=Pₛₑₜ / Nu / 100)
+@time al_ddp!(problem; ctol=1e-6, μ=0.1, ϕ=3.0, verbosity=1, ρi=1e-10, tol=1e-6, gtol=Pₛₑₜ / Nu / 100)
 @show eval_cost(problem)
 U_opt = [Array(u) for u in problem.z.U]
 X_opt = [Array(x) for x in problem.z.X]

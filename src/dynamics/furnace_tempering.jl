@@ -1,4 +1,4 @@
-
+export FurnaceTempering
 struct FurnaceTempering{T} <: Dynamics{T}
     furnace::Furnace{T}
     tempering::Tempering{T}

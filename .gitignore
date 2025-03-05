@@ -26,15 +26,10 @@ Manifest.toml
 # Sysimages
 *.so
 
-# Videos
-videos/*
-
-# Images
-fig/*
-
 # Data
 data/*
 ma77_*
+input/*
 output/*
 
 # VS Code Settings

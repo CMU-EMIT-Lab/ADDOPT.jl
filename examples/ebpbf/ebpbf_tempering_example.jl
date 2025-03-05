@@ -1,4 +1,4 @@
-include("../../ADDOPT.jl")
+using ADDOPT
 using Plots
 using Profile
 using LinearAlgebra
@@ -21,7 +21,7 @@ V = CuVector{Ty}
 M = CuMatrix{Ty}
 
 # Geometric parameters
-mask_img = Ty.(Gray.(load("alt_src/examples/ebpbf/scotty_bw.png")))
+mask_img = Ty.(Gray.(load("examples/ebpbf/scotty_bw.png")))
 
 n_subsample = 5
 mask_img_blurred = imfilter(mask_img, Kernel.gaussian(n_subsample))
@@ -146,12 +146,12 @@ problem = Problem(x₀, process, costs, constraints, M)
 U0 = vcat([uw for k in 1:(Nk-Nkc)], [u0 for k in 1:Nkc])
 
 
-for iter in 1:500
+for iter in 1:1#500
     # Generate random initial guess
-    for k in 1:(Nk-Nkc)
-        CUDA.rand!(U0[k])
-        U0[k] .*= Pₛₑₜ / sum(U0[k])
-    end
+    # for k in 1:(Nk-Nkc)
+    #     CUDA.rand!(U0[k])
+    #     U0[k] .*= Pₛₑₜ / sum(U0[k])
+    # end
 
     @time rollout!(problem, U0)
     @time rollout!(problem, U0)
@@ -188,8 +188,8 @@ for iter in 1:500
 
     @time rollout!(problem, U0)
     @show eval_cost(problem)
-    @time al_ilqr!(problem; ctol=1e-4, μ=0.1, ϕ=3.0, verbosity=2, ρi=1e-10, tol=1e-4, gtol=Pₛₑₜ / Nu / 100)
-    @time al_ilqr!(problem; ctol=1e-4, μ=0.1, ϕ=3.0, verbosity=2, ρi=1e-10, tol=1e-4, gtol=Pₛₑₜ / Nu / 100)
+    @time al_ddp!(problem; ctol=1e-4, μ=0.1, ϕ=3.0, verbosity=2, ρi=1e-10, tol=1e-4, gtol=Pₛₑₜ / Nu / 100)
+    @time al_ddp!(problem; ctol=1e-4, μ=0.1, ϕ=3.0, verbosity=2, ρi=1e-10, tol=1e-4, gtol=Pₛₑₜ / Nu / 100)
     @show eval_cost(problem)
     U_opt = [Array(u) for u in problem.z.U]
     save_object("solution_U_$(iter)_$(n_subsample).jld2", U_opt)

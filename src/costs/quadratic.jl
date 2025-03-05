@@ -1,4 +1,5 @@
 
+export QuadraticCost
 struct QuadraticCost{T<:AbstractFloat,V<:AbstractVector{T},M<:AbstractMatrix{T}} <: Cost{T}
     Q::M
     R::M

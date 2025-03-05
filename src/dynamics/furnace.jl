@@ -1,4 +1,4 @@
-
+export Furnace
 struct Furnace{T} <: Dynamics{T}
     h::T
     T∞::T

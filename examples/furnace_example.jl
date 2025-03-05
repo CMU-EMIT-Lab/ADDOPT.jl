@@ -46,16 +46,16 @@ U0 = [[600.0e-3] for _ in 1:(Nk-1)]
 
 
 @time rollout!(problem, U0)
-@time al_ilqr!(problem; maxiters=20, ϕ=2.0, gtol=1e-4, verbosity=2)
+@time al_ddp!(problem; maxiters=20, ϕ=2.0, gtol=1e-4, verbosity=2)
 rollout!(problem, U0)
-@time al_ilqr!(problem; maxiters=20, ϕ=2.0, gtol=1e-4, verbosity=2)
+@time al_ddp!(problem; maxiters=20, ϕ=2.0, gtol=1e-4, verbosity=2)
 rollout!(problem, U0)
-@profview_allocs al_ilqr!(problem; maxiters=20, ϕ=2.0) sample_rate = 0.001
+@profview_allocs al_ddp!(problem; maxiters=20, ϕ=2.0) sample_rate = 0.001
 rollout!(problem, U0)
-@profview al_ilqr!(problem; maxiters=20, ϕ=2.0)
+@profview al_ddp!(problem; maxiters=20, ϕ=2.0)
 
 @time rollout!(problem, U0)
-@time al_ilqr!(problem; maxiters=20, ϕ=2.0, gtol=1e-4, verbosity=2)
+@time al_ddp!(problem; maxiters=20, ϕ=2.0, gtol=1e-4, verbosity=2)
 X, U = problem.z.X, problem.z.U
 t = dt*0:(Nk-1)
 T = [x[1] for x in X]

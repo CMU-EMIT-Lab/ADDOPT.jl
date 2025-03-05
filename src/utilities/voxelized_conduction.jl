@@ -1,5 +1,3 @@
-using ExponentialUtilities
-
 function discretize_linear_dynamics(A, B, e, dt)
     nx, nu = size(B)
     H = [A B I(nx);

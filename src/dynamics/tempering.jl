@@ -1,4 +1,5 @@
 
+export Tempering
 struct Tempering{T} <: Dynamics{T}
     lnA::T # Constant rate log
     E::T # Activation energy (kJ/mol)

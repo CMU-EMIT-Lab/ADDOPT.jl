@@ -1,3 +1,4 @@
+export WAAM_Voxelized
 struct WAAM_Voxelized{T<:AbstractFloat,V<:AbstractVector{T},M<:AbstractMatrix{T}} <: Dynamics{T}
     nvox::Int
 

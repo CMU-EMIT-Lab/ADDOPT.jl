@@ -1,4 +1,4 @@
-include("../../ADDOPT.jl")
+using ADDOPT
 using Plots
 using Profile
 using LinearAlgebra
@@ -22,7 +22,7 @@ V = CuVector{Ty}
 M = CuMatrix{Ty}
 
 # Geometric parameters
-mask_img = Ty.(Gray.(load("alt_src/examples/ebpbf/scotty_bw.png")))
+mask_img = Ty.(Gray.(load("examples/ebpbf/scotty_bw.png")))
 
 n_subsample = 5
 mask_img_blurred = imfilter(mask_img, Kernel.gaussian(n_subsample))
@@ -78,7 +78,7 @@ dynamics = PBFTempering(pbf_powerfield, tempering)
 
 x₀ = V([T∞ * ones(nvox); log(-log(1 - y_init)) * ones(nvox)])
 
-U_opt = load_object("alt_src/examples/ebpbf/solution_U_new_$(n_subsample).jld2")
+U_opt = load_object("examples/ebpbf/solution_U_new_$(n_subsample).jld2")
 Nk = length(U_opt)
 dynamics_v = [dynamics for _ in 1:Nk]
 
