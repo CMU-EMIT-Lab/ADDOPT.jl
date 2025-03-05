@@ -143,111 +143,122 @@ final_cost = QuadraticCost(Qf, R, x̄, ū)
 push!(costs, final_cost)
 
 problem = Problem(x₀, process, costs, constraints, M)
-
 U0 = vcat([uw for k in 1:(Nk-Nkc)], [u0 for k in 1:Nkc])
-@time rollout!(problem, U0)
-@time rollout!(problem, U0)
-eval_constraints!(problem, problem.z, problem.v)
-eval_penalty_multiplier!(problem, problem.v, 1e-1)
-@show constraint_violation(problem, problem.v)
-eval_lagrangian_cost(problem.v)
-U_naive = [Array(u) for u in problem.z.U]
-save_object("initialguess_U_$(n_subsample).jld2", U_naive)
 
-### VISUALIZE BEFORE OPTIMIZATION ###
-X, U = problem.z.X, problem.z.U
-t = (0:(Nk-1)) .* dt
-T_surface = [reverse(reshape(Array(x[1:nsvox] .* 1e3), Nx, Ny), dims=1) for x in X]
-ŷ_surface = [reverse(reshape(Array(x[(nvox+1):(nvox+nsvox)]), Nx, Ny), dims=1) for x in X]
-P_surface = [reverse(reshape(Array((pbf_powerfield.B*u)[1:nsvox] .* (l^3 * ρ * cₚ) ./ (l * 1e3)^2), Nx, Ny), dims=1) for u in U]
-Pdmax = round(maximum([maximum(P) for P in P_surface]), sigdigits=1)
 
-y_surface = [1 .- exp.(-exp.(ŷ)) for ŷ in ŷ_surface]
-heatmap(abs.(y_surface[end] .- reverse(mask_img_subsampled, dims=1)), aspect_ratio=:equal, title="Error Magnitude")
+for iter in 1:500
+    # Generate random initial guess
+    for k in 1:(Nk-Nkc)
+        CUDA.rand!(U0[k])
+        U0[k] .*= Pₛₑₜ / sum(U0[k])
+    end
 
-anim = @animate for (t, P, T, y) in zip(t, P_surface, T_surface, y_surface)
-    title_str = @sprintf "Process at %.3f seconds" t
+    @time rollout!(problem, U0)
+    @time rollout!(problem, U0)
+    eval_constraints!(problem, problem.z, problem.v)
+    eval_penalty_multiplier!(problem, problem.v, 1e-1)
+    @show constraint_violation(problem, problem.v)
+    eval_lagrangian_cost(problem.v)
+    U_naive = [Array(u) for u in problem.z.U]
+    save_object("initialguess_U_$(iter)_$(n_subsample).jld2", U_naive)
 
-    h1 = heatmap(P, aspect_ratio=:equal, ticks=false, c=:ice, cbar_title="Power Density (W/mm²)", clim=(0.0, Pdmax))
-    h2 = heatmap(T, aspect_ratio=:equal, ticks=false, c=:inferno, cbar_title="Temperature (K)", clim=(T∞ * 1e3, T_AC1 * 1e3), title=title_str)
-    h3 = heatmap(y, aspect_ratio=:equal, ticks=false, c=:acton, cbar_title="Fraction Tempered", clim=(0, 1))
+    ### VISUALIZE BEFORE OPTIMIZATION ###
+    X, U = problem.z.X, problem.z.U
+    t = (0:(Nk-1)) .* dt
+    T_surface = [reverse(reshape(Array(x[1:nsvox] .* 1e3), Nx, Ny), dims=1) for x in X]
+    ŷ_surface = [reverse(reshape(Array(x[(nvox+1):(nvox+nsvox)]), Nx, Ny), dims=1) for x in X]
+    P_surface = [reverse(reshape(Array((pbf_powerfield.B*u)[1:nsvox] .* (l^3 * ρ * cₚ) ./ (l * 1e3)^2), Nx, Ny), dims=1) for u in U]
+    Pdmax = round(maximum([maximum(P) for P in P_surface]), sigdigits=1)
 
-    plot(h1, h2, h3; layout=(1, 3), size=((12Nx) * 3, 12Ny + 110))
+    y_surface = [1 .- exp.(-exp.(ŷ)) for ŷ in ŷ_surface]
+    heatmap(abs.(y_surface[end] .- reverse(mask_img_subsampled, dims=1)), aspect_ratio=:equal, title="Error Magnitude")
+
+    anim = @animate for (t, P, T, y) in zip(t, P_surface, T_surface, y_surface)
+        title_str = @sprintf "Process at %.3f seconds" t
+
+        h1 = heatmap(P, aspect_ratio=:equal, ticks=false, c=:ice, cbar_title="Power Density (W/mm²)", clim=(0.0, Pdmax))
+        h2 = heatmap(T, aspect_ratio=:equal, ticks=false, c=:inferno, cbar_title="Temperature (K)", clim=(T∞ * 1e3, T_AC1 * 1e3), title=title_str)
+        h3 = heatmap(y, aspect_ratio=:equal, ticks=false, c=:acton, cbar_title="Fraction Tempered", clim=(0, 1))
+
+        plot(h1, h2, h3; layout=(1, 3), size=((12Nx) * 3, 12Ny + 110))
+    end
+    gif(anim, "unoptimized_$(iter)_$(n_subsample).mp4", fps=(1 / dt))
+
+    ### OPTIMIZE ###
+
+    @time rollout!(problem, U0)
+    @show eval_cost(problem)
+    @time al_ilqr!(problem; ctol=1e-4, μ=0.1, ϕ=3.0, verbosity=2, ρi=1e-10, tol=1e-4, gtol=Pₛₑₜ / Nu / 100)
+    @time al_ilqr!(problem; ctol=1e-4, μ=0.1, ϕ=3.0, verbosity=2, ρi=1e-10, tol=1e-4, gtol=Pₛₑₜ / Nu / 100)
+    @show eval_cost(problem)
+    U_opt = [Array(u) for u in problem.z.U]
+    save_object("solution_U_$(iter)_$(n_subsample).jld2", U_opt)
+
+    ### VISUALIZE AFTER OPTIMIZATION ###
+    X, U = problem.z.X, problem.z.U
+    t = (0:(Nk-1)) .* dt
+    T_surface = [reverse(reshape(Array(x[1:nsvox] .* 1e3), Nx, Ny), dims=1) for x in X]
+    ŷ_surface = [reverse(reshape(Array(x[(nvox+1):(nvox+nsvox)]), Nx, Ny), dims=1) for x in X]
+    P_surface = [reverse(reshape(Array((pbf_powerfield.B*u)[1:nsvox] .* (l^3 * ρ * cₚ) ./ (l * 1e3)^2), Nx, Ny), dims=1) for u in U]
+    Pdmax = round(maximum([maximum(P) for P in P_surface]), sigdigits=1)
+
+    y_surface = [1 .- exp.(-exp.(ŷ)) for ŷ in ŷ_surface]
+
+    anim = @animate for (t, P, T, y) in zip(t, P_surface, T_surface, y_surface)
+        title_str = @sprintf "Process at %.3f seconds" t
+
+        h1 = heatmap(P, aspect_ratio=:equal, ticks=false, c=:ice, cbar_title="Power Density (W/mm²)", clim=(0.0, Pdmax))
+        h2 = heatmap(T, aspect_ratio=:equal, ticks=false, c=:inferno, cbar_title="Temperature (K)", clim=(T∞ * 1e3, T_AC1 * 1e3), title=title_str)
+        h3 = heatmap(y, aspect_ratio=:equal, ticks=false, c=:acton, cbar_title="Fraction Tempered", clim=(0, 1))
+
+        plot(h1, h2, h3; layout=(1, 3), size=((12Nx) * 3, 12Ny + 110))
+    end
+    gif(anim, "optimized_$(iter)_$(n_subsample).mp4", fps=(1 / dt))
 end
-gif(anim, "unoptimized_$(n_subsample).mp4", fps=(1 / dt))
 
+# ### APPROXIMATE WITH SPOTS ###
+# seq, dwell = powerfield_to_sequence(dt, 1 / ω, 1e-6, [Array(u) for u in U[1:(end-Nkc)]])
 
-### OPTIMIZE ###
-@show eval_cost(problem)
-@time al_ilqr!(problem; ctol=1e-4, μ=0.1, ϕ=3.0, verbosity=3, ρi=1e-10, tol=1e-4, gtol=Pₛₑₜ / Nu / 100)
-@time al_ilqr!(problem; ctol=1e-4, μ=0.1, ϕ=3.0, verbosity=3, ρi=1e-10, tol=1e-4, gtol=Pₛₑₜ / Nu / 100)
-@show eval_cost(problem)
-U_opt = [Array(u) for u in problem.z.U]
-save_object("solution_U_new_$(n_subsample).jld2", U_opt)
+# process = problem = 0
+# tempering_sim = Tempering(lnA, n, E, Ty(dwell); num=nvox)
+# pbf_powerfield_sim = PBFPowerField(Nx, Ny, Nz, l, k, ρ, cₚ, T∞, T₀, h, Ty(dwell), Ty, V, M; σ=σ, buffer=buffer)
+# dynamics_sim = PBFTempering(pbf_powerfield_sim, tempering_sim)
 
-### VISUALIZE AFTER OPTIMIZATION ###
-X, U = problem.z.X, problem.z.U
-t = (0:(Nk-1)) .* dt
-T_surface = [reverse(reshape(Array(x[1:nsvox] .* 1e3), Nx, Ny), dims=1) for x in X]
-ŷ_surface = [reverse(reshape(Array(x[(nvox+1):(nvox+nsvox)]), Nx, Ny), dims=1) for x in X]
-P_surface = [reverse(reshape(Array((pbf_powerfield.B*u)[1:nsvox] .* (l^3 * ρ * cₚ) ./ (l * 1e3)^2), Nx, Ny), dims=1) for u in U]
-Pdmax = round(maximum([maximum(P) for P in P_surface]), sigdigits=1)
+# U_spot = vcat([zeros(Nu) for _ in 1:3length(seq)])
+# for (u, idx) in zip(U_spot, seq)
+#     u[idx] = Pₛₑₜ
+# end
+# U_spot = [V(u) for u in U_spot]
+# X_spot = [V(zeros(2nvox)) for u in U_spot]
 
-y_surface = [1 .- exp.(-exp.(ŷ)) for ŷ in ŷ_surface]
+# rollout!([dynamics_sim for _ in U_spot], 3 * length(seq), x₀, X_spot, U_spot)
 
-anim = @animate for (t, P, T, y) in zip(t, P_surface, T_surface, y_surface)
-    title_str = @sprintf "Process at %.3f seconds" t
+# ### VISUALIZE AFTER OPTIMIZATION ###
+# t = (0:(length(U_spot)-1)) .* dwell
+# T_surface = [reverse(reshape(Array(x[1:nsvox] .* 1e3), Nx, Ny), dims=1) for x in X_spot]
+# ŷ_surface = [reverse(reshape(Array(x[(nvox+1):(nvox+nsvox)]), Nx, Ny), dims=1) for x in X_spot]
+# P_surface = [reverse(reshape(Array((pbf_powerfield_sim.B*u)[1:nsvox] .* (l^3 * ρ * cₚ) ./ (l * 1e3)^2), Nx, Ny), dims=1) for u in U_spot]
 
-    h1 = heatmap(P, aspect_ratio=:equal, ticks=false, c=:ice, cbar_title="Power Density (W/mm²)", clim=(0.0, Pdmax))
-    h2 = heatmap(T, aspect_ratio=:equal, ticks=false, c=:inferno, cbar_title="Temperature (K)", clim=(T∞ * 1e3, T_AC1 * 1e3), title=title_str)
-    h3 = heatmap(y, aspect_ratio=:equal, ticks=false, c=:acton, cbar_title="Fraction Tempered", clim=(0, 1))
+# y_surface = [1 .- exp.(-exp.(ŷ)) for ŷ in ŷ_surface]
 
-    plot(h1, h2, h3; layout=(1, 3), size=((12Nx) * 3, 12Ny + 110))
-end
-gif(anim, "optimized_$(n_subsample).mp4", fps=(1 / dt))
+# heatmap(abs.(y_surface[end] .- reverse(mask_img_subsampled, dims=1)), aspect_ratio=:equal, title="Error Magnitude")
 
-seq, dwell = powerfield_to_sequence(dt, 1 / ω, 1e-6, [Array(u) for u in U[1:(end-Nkc)]])
+# skip = 100
+# for k in (skip+1):skip:(length(U_spot))
+#     P_surface[k] .= sum(P_surface[(k-skip):(k-1)]) ./ skip
+# end
+# anim = @animate for (t, P, T, y) in zip(t[1:skip:end], P_surface[1:skip:end], T_surface[1:skip:end], y_surface[1:skip:end])
+#     title_str = @sprintf "Process at %.3f seconds" t
 
-process = problem = 0
-tempering_sim = Tempering(lnA, n, E, Ty(dwell); num=nvox)
-pbf_powerfield_sim = PBFPowerField(Nx, Ny, Nz, l, k, ρ, cₚ, T∞, T₀, h, Ty(dwell), Ty, V, M; σ=σ, buffer=buffer)
-dynamics_sim = PBFTempering(pbf_powerfield_sim, tempering_sim)
+#     h1 = heatmap(P, aspect_ratio=:equal, ticks=false, c=:ice, cbar_title="Power Density (W/mm²)", clim=(0.0, Pdmax))
+#     h2 = heatmap(T, aspect_ratio=:equal, ticks=false, c=:inferno, cbar_title="Temperature (K)", clim=(T∞ * 1e3, T_AC1 * 1e3), title=title_str)
+#     h3 = heatmap(y, aspect_ratio=:equal, ticks=false, c=:acton, cbar_title="Fraction Tempered", clim=(0, 1))
 
-U_spot = vcat([zeros(Nu) for _ in 1:3length(seq)])
-for (u, idx) in zip(U_spot, seq)
-    u[idx] = Pₛₑₜ
-end
-U_spot = [V(u) for u in U_spot]
-X_spot = [V(zeros(2nvox)) for u in U_spot]
+#     plot(h1, h2, h3; layout=(1, 3), size=((12Nx) * 3, 12Ny + 110))
+# end
+# gif(anim, "approximated_$(n_subsample).mp4", fps=(1 / dwell / skip))
 
-rollout!([dynamics_sim for _ in U_spot], 3 * length(seq), x₀, X_spot, U_spot)
-
-### VISUALIZE AFTER OPTIMIZATION ###
-t = (0:(length(U_spot)-1)) .* dwell
-T_surface = [reverse(reshape(Array(x[1:nsvox] .* 1e3), Nx, Ny), dims=1) for x in X_spot]
-ŷ_surface = [reverse(reshape(Array(x[(nvox+1):(nvox+nsvox)]), Nx, Ny), dims=1) for x in X_spot]
-P_surface = [reverse(reshape(Array((pbf_powerfield_sim.B*u)[1:nsvox] .* (l^3 * ρ * cₚ) ./ (l * 1e3)^2), Nx, Ny), dims=1) for u in U_spot]
-
-y_surface = [1 .- exp.(-exp.(ŷ)) for ŷ in ŷ_surface]
-
-heatmap(abs.(y_surface[end] .- reverse(mask_img_subsampled, dims=1)), aspect_ratio=:equal, title="Error Magnitude")
-
-skip = 100
-for k in (skip+1):skip:(length(U_spot))
-    P_surface[k] .= sum(P_surface[(k-skip):(k-1)]) ./ skip
-end
-anim = @animate for (t, P, T, y) in zip(t[1:skip:end], P_surface[1:skip:end], T_surface[1:skip:end], y_surface[1:skip:end])
-    title_str = @sprintf "Process at %.3f seconds" t
-
-    h1 = heatmap(P, aspect_ratio=:equal, ticks=false, c=:ice, cbar_title="Power Density (W/mm²)", clim=(0.0, Pdmax))
-    h2 = heatmap(T, aspect_ratio=:equal, ticks=false, c=:inferno, cbar_title="Temperature (K)", clim=(T∞ * 1e3, T_AC1 * 1e3), title=title_str)
-    h3 = heatmap(y, aspect_ratio=:equal, ticks=false, c=:acton, cbar_title="Fraction Tempered", clim=(0, 1))
-
-    plot(h1, h2, h3; layout=(1, 3), size=((12Nx) * 3, 12Ny + 110))
-end
-gif(anim, "approximated_$(n_subsample).mp4", fps=(1 / dwell / skip))
-
-xyz = get_coordinates(Nx - 2buffer, Ny - 2buffer, 1, l)
-points = [(xyz[:, seq][1], xyz[:, seq][2]) for seq in seq]
-points
-CSV.write("scan_strat_optimized.csv", Tables.table(vcat([[round(x, digits=9); round(y, digits=9); round(dwell, digits=9)]' for (x, y) in points]...); header=["X", "Y", "Δt"]))
+# xyz = get_coordinates(Nx - 2buffer, Ny - 2buffer, 1, l)
+# points = [(xyz[:, seq][1], xyz[:, seq][2]) for seq in seq]
+# points
+# CSV.write("scan_strat_optimized.csv", Tables.table(vcat([[round(x, digits=9); round(y, digits=9); round(dwell, digits=9)]' for (x, y) in points]...); header=["X", "Y", "Δt"]))
