@@ -1,6 +1,8 @@
 
 include("integration.jl")
 include("voxelized_conduction.jl")
+include("bead_generation.jl")
+include("finite_diff.jl")
 
 function refine_grid(u, n)
     nx, ny = size(u)

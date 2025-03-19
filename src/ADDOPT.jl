@@ -3,6 +3,7 @@ module ADDOPT
 # Import dependencies
 using LinearAlgebra
 using SparseArrays
+using StaticArrays
 
 using Statistics
 using StatsBase
@@ -35,6 +36,8 @@ export eval_cost, eval_lagrangian_cost, constraint_violation, eval_constraints!,
 export al_ddp!
 
 export powerfield_to_sequence, powerfield_to_sequence_with_traverse
+
+export finite_diff!, path_to_points
 
 # Include module files
 include("dynamics/Dynamics.jl")

@@ -1,4 +1,4 @@
-include("../ADDOPT.jl")
+using ADDOPT
 using Plots
 using Profile
 using LinearAlgebra
@@ -61,6 +61,7 @@ end
 
 
 ######## Begin tuning ########
+cd("examples/ebpbf")
 
 HVmin = 135.0
 HVmax = 404.0
@@ -69,7 +70,7 @@ HVmax = 404.0
 y_init = (HVmax - 365) / (HVmax - HVmin)
 mask_img_subsampled = reverse(Gray.(load("scotty_target_subs5.png")), dims=1)
 HV_goal = ((1.0 .- Float64.(mask_img_subsampled)) .* (0.9 - y_init) .+ y_init)
-HV_goal = HVmax .-  (HVmax - HVmin) .* HV_goal
+HV_goal = HVmax .- (HVmax - HVmin) .* HV_goal
 
 
 # Geometric parameters
@@ -162,7 +163,7 @@ end
 df = TwiceDifferentiable(J, J_grad!, J_hess!, θ₀)
 
 lower_bounds = Float32.([-Inf; 0.5; 0.0; 390.0; 130.0; 0.6])
-upper_bounds = Float32.([Inf; 1000.0; n*300.0f-3; 440.0; 200.0; 1.0])
+upper_bounds = Float32.([Inf; 1000.0; n * 300.0f-3; 440.0; 200.0; 1.0])
 bounds = TwiceDifferentiableConstraints(lower_bounds, upper_bounds)
 
 nlnA, invn, nE, HVmax, HVmin, η = θ₀
@@ -174,7 +175,7 @@ HVf_0 = [simulate_process(lnA, n, E, HVmax, HVmin, η, pbf_powerfield, U, HV_ini
 
 @show J(θ₀)
 
-using LineSearches
+# using LineSearches
 
 # Jc = Inf
 θ = copy(θ₀)
@@ -195,18 +196,26 @@ using LineSearches
 
 θ1 = Ty.([0.358 * 8.845, 1 / 0.358, 0.358 * 56.277e-3, 404.0, 135.0, 1.0])
 
-nlnA, invn, nE, HVmax, HVmin, η = θ1
-n = 1 / invn
-lnA = nlnA / n
-E = nE / n
+
+lnA = Ty(8.845)
+n = Ty(0.358)
+E = Ty(56.277e-3)
+HVmin = Ty(135.0)
+HVmax = Ty(404.0)
+η = Ty(1.0)
+
+# nlnA, invn, nE, HVmax, HVmin, η = θ1
+# n = 1 / invn
+# lnA = nlnA / n
+# E = nE / n
 
 HVf_f1 = [simulate_process(lnA, n, E, HVmax, HVmin, η, pbf_powerfield, U, HV_init, dt, nvox, Nx, Ny, T∞) for (U, HV_init) in zip(U_arr, HV_init)]
 
 
-nlnA, invn, nE, HVmax, HVmin, η = θ
-n = 1 / invn
-lnA = nlnA / n
-E = nE / n
+# nlnA, invn, nE, HVmax, HVmin, η = θ
+# n = 1 / invn
+# lnA = nlnA / n
+# E = nE / n
 
 HVf_f = [simulate_process(lnA, n, E, HVmax, HVmin, η, pbf_powerfield, U, HV_init, dt, nvox, Nx, Ny, T∞) for (U, HV_init) in zip(U_arr, HV_init)]
 
@@ -225,12 +234,34 @@ pe = plot(pe1, pe2, pe3, layout=(3, 1), size=(length(U_arr) * 550, 3 * 600))
 
 @show J(θ)
 @show lnA, n, E, HVmax, HVmin, η
-    # (8.648193f0, 0.7761927f0, 0.045957092f0, 391.70642f0, 199.9739f0, 0.9365894f0)
+# (8.648193f0, 0.7761927f0, 0.045957092f0, 391.70642f0, 199.9739f0, 0.9365894f0)
 θ1 = Ty.([0.358 * 8.845, 1 / 0.358, 0.358 * 56.277e-3, 404.0, 135.0, 1.0])
 @show J(θ1)
 
-@show rmse_final = sqrt(sum(((HV_ref[4] .- HV_goal) .* HV_mask).^2) ./ sum(HV_mask))
-@show mae_final = sum(abs.((HV_ref[4] .- HV_goal) .* HV_mask)) ./ sum(HV_mask)
 
-@show rmse_final = sqrt(sum(((HV_ref[4] .- HV_goal) .* HV_mask ./ HV_goal).^2) ./ sum(HV_mask)) * 100
-@show mae_final = sum(abs.((HV_ref[4] .- HV_goal) .* HV_mask ./ HV_goal)) ./ sum(HV_mask) * 100
+# @show rmse_final = sqrt(sum(((HV_ref[4] .- HVf_f[4]) .* HV_mask).^2) / sum(HV_mask))
+# @show mae_final = sum(abs.((HV_ref[4] .- HVf_f[4]) .* HV_mask)) / sum(HV_mask)
+
+@show predicted_rmse_final_naive = sqrt(sum(((HVf_f[3] .- HV_goal) .* HV_mask) .^ 2) / sum(HV_mask))
+@show predicted_mae_final_naive = sum(abs.((HVf_f[3] .- HV_goal) .* HV_mask)) / sum(HV_mask)
+
+@show predicted_rmse_final_opt = sqrt(sum(((HVf_f[4] .- HV_goal) .* HV_mask) .^ 2) / sum(HV_mask))
+@show predicted_mae_final_opt = sum(abs.((HVf_f[4] .- HV_goal) .* HV_mask)) / sum(HV_mask)
+
+@show rmse_final_naive = sqrt(sum(((HV_ref[3] .- HV_goal) .* HV_mask) .^ 2) / sum(HV_mask))
+@show mae_final_naive = sum(abs.((HV_ref[3] .- HV_goal) .* HV_mask)) / sum(HV_mask)
+
+@show rmse_final_opt = sqrt(sum(((HV_ref[4] .- HV_goal) .* HV_mask) .^ 2) / sum(HV_mask))
+@show mae_final_opt = sum(abs.((HV_ref[4] .- HV_goal) .* HV_mask)) / sum(HV_mask)
+
+@show rmse_final_opt_pct = sqrt(sum(((HV_ref[4] .- HV_goal) .* HV_mask ./ HV_goal) .^ 2) / sum(HV_mask)) * 100
+@show mae_final_opt_pct = sum(abs.((HV_ref[4] .- HV_goal) .* HV_mask ./ HV_goal)) / sum(HV_mask) * 100
+
+vals = [predicted_rmse_final_naive rmse_final_naive; predicted_rmse_final_opt rmse_final_opt]
+x = [1 2; 4 5]
+# ticks = ["Naive", nothing, "Optimized", nothing]
+bar(x, vals, barwidths=1, color=[:orange :green; :orange :green], label=["Predicted" "Measured"], xticks=(1.5:3:4.5, ["Naive", "Optimized"]),
+    ylabel="RMSE (HV)",
+    ylabelfontsize=13,
+    xtickfontsize=13, ytickfontsize=9, legendfontsize=11)
+savefig("improvement.pdf")
