@@ -76,42 +76,42 @@ function heat_flow_finite_diff_kernel(T_2, T_1, mask, l, k, h∞, T∞)
         return nothing
     end
 
-    T = T_1[x, y, z]
+    @inbounds T = T_1[x, y, z]
 
     if x > 1 && mask[x-1, y, z]
-        T_2[x, y, z] += (T_1[x-1, y, z] - T) * l * k
+        @inbounds T_2[x, y, z] += (T_1[x-1, y, z] - T) * l * k
     else
-        T_2[x, y, z] += (T∞ - T) * l^2 * h∞
+        @inbounds T_2[x, y, z] += (T∞ - T) * l^2 * h∞
     end
 
     if x < Nx && mask[x+1, y, z]
-        T_2[x, y, z] += (T_1[x+1, y, z] - T) * l * k
+        @inbounds T_2[x, y, z] += (T_1[x+1, y, z] - T) * l * k
     else
-        T_2[x, y, z] += (T∞ - T) * l^2 * h∞
+        @inbounds T_2[x, y, z] += (T∞ - T) * l^2 * h∞
     end
 
     if y > 1 && mask[x, y-1, z]
-        T_2[x, y, z] += (T_1[x, y-1, z] - T) * l * k
+        @inbounds T_2[x, y, z] += (T_1[x, y-1, z] - T) * l * k
     else
-        T_2[x, y, z] += (T∞ - T) * l^2 * h∞
+        @inbounds T_2[x, y, z] += (T∞ - T) * l^2 * h∞
     end
 
     if y < Ny && mask[x, y+1, z]
-        T_2[x, y, z] += (T_1[x, y+1, z] - T) * l * k
+        @inbounds T_2[x, y, z] += (T_1[x, y+1, z] - T) * l * k
     else
-        T_2[x, y, z] += (T∞ - T) * l^2 * h∞
+        @inbounds T_2[x, y, z] += (T∞ - T) * l^2 * h∞
     end
 
     if z > 1 && mask[x, y, z-1]
-        T_2[x, y, z] += (T_1[x, y, z-1] - T) * l * k
+        @inbounds T_2[x, y, z] += (T_1[x, y, z-1] - T) * l * k
     else
-        T_2[x, y, z] += (T∞ - T) * l * k
+        @inbounds T_2[x, y, z] += (T∞ - T) * l * k
     end
 
     if z < Nz && mask[x, y, z+1]
-        T_2[x, y, z] += (T_1[x, y, z+1] - T) * l * k
+        @inbounds T_2[x, y, z] += (T_1[x, y, z+1] - T) * l * k
     else
-        T_2[x, y, z] += (T∞ - T) * l^2 * h∞
+        @inbounds T_2[x, y, z] += (T∞ - T) * l^2 * h∞
     end
 
     return nothing
