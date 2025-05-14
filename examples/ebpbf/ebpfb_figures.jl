@@ -79,6 +79,7 @@ dynamics = PBFTempering(pbf_powerfield, tempering)
 x₀ = V([T∞ * ones(nvox); log(-log(1 - y_init)) * ones(nvox)])
 
 U_opt = load_object("examples/ebpbf/solution_U_new_$(n_subsample).jld2")
+# U_opt = load_object("solution_U_1_$(n_subsample).jld2")
 Nk = length(U_opt)
 dynamics_v = [dynamics for _ in 1:Nk]
 
@@ -94,9 +95,9 @@ ŷ_surface = [reverse(reshape(Array(x[(nvox+1):(nvox+nsvox)]), Nx, Ny), dims=1)
 P_surface = [reverse(reshape(Array((pbf_powerfield.B*u)[1:nsvox] .* (l^3 * ρ * cₚ) ./ (l * 1e3)^2), Nx, Ny), dims=1) for u in U]
 Pdmax = round(maximum([maximum(P) for P in P_surface]), sigdigits=1)
 
+y_surface = [1 .- exp.(-exp.(ŷ)) for ŷ in ŷ_surface]
 H_end = y_surface[end] * (HVmin - HVmax) .+ HVmax
 
-y_surface = [1 .- exp.(-exp.(ŷ)) for ŷ in ŷ_surface]
 hm = heatmap(H_end, aspect_ratio=:equal, clim=(140, 420), size=(550, 600), fontsize=16, tickfontsize=14)
 savefig("hardness_fig.png")
 
