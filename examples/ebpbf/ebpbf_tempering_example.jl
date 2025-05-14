@@ -99,7 +99,7 @@ for i in 1:1000
     if maximum(x2) ≥ T_AC1 - 100e-3
         break
     end
-    Nk = i
+    global Nk = i
     x1 .= x2
 end
 for i in 1:1000
@@ -107,7 +107,7 @@ for i in 1:1000
     if maximum(x2) ≤ 450e-3
         break
     end
-    Nkc = i
+    global Nkc = i
     x1 .= x2
 end
 @show Nk = Nk + Nkc
@@ -131,14 +131,14 @@ constraints = vcat([build_constraint for _ in 1:(Nk-Nkc)], [cooling_constraint f
 x̄ = V([T∞ * ones(nvox); log.(-log.(1 .- mask))])
 ū = V(zeros(Nu))
 
-Q = diagm([zeros(nvox); 1e-2 / Nk / nsvox * ones(nsvox); 0 * ones(nvox - nsvox)])
-Qf = diagm([zeros(nvox); 1e3 / nsvox * ones(nsvox); 0 * ones(nvox - nsvox)])
-R = diagm(0.0 * ones(Nu))
+Q = diagm(zeros(2nvox))
+Qf = diagm([zeros(nvox); 1e-2 * ones(nsvox); zeros(nvox - nsvox)])
+R = diagm(zeros(Nu))
 Q = M(Q)
 Qf = M(Qf)
 R = M(R)
 cost = QuadraticCost(Q, R, x̄, ū)
-costs = [cost for _ in 1:(Nk-1)]
+costs = [QuadraticCost(Qf .* Ty(exp(-(Nk - k) / 5)), R, x̄, ū) for k in 1:(Nk-1)]
 final_cost = QuadraticCost(Qf, R, x̄, ū)
 push!(costs, final_cost)
 
@@ -146,7 +146,7 @@ problem = Problem(x₀, process, costs, constraints, M)
 U0 = vcat([uw for k in 1:(Nk-Nkc)], [u0 for k in 1:Nkc])
 
 
-for iter in 1:1#500
+for iter in 2:2#500
     # Generate random initial guess
     # for k in 1:(Nk-Nkc)
     #     CUDA.rand!(U0[k])
@@ -188,8 +188,7 @@ for iter in 1:1#500
 
     @time rollout!(problem, U0)
     @show eval_cost(problem)
-    @time al_ddp!(problem; ctol=1e-4, μ=0.1, ϕ=3.0, verbosity=2, ρi=1e-10, tol=1e-4, gtol=Pₛₑₜ / Nu / 100)
-    @time al_ddp!(problem; ctol=1e-4, μ=0.1, ϕ=3.0, verbosity=2, ρi=1e-10, tol=1e-4, gtol=Pₛₑₜ / Nu / 100)
+    @time al_ddp!(problem; ctol=1e-4, μ=0.1, ϕ=3.0, verbosity=2, ρi=1e-8, tol=1e-4, gtol=Pₛₑₜ / Nu / 100)
     @show eval_cost(problem)
     U_opt = [Array(u) for u in problem.z.U]
     save_object("solution_U_$(iter)_$(n_subsample).jld2", U_opt)

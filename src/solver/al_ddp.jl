@@ -131,6 +131,11 @@ function backward_pass(problem::Problem, ρ; verbosity=4)
     ΔV₂ = 0.0
     Δu_ff = 0.0
 
+    # Update derivatives
+    constraint_state_jacobian!(constraints[N], cx[N], x[N], u[N])
+    cost_state_gradient!(costs[N], lx[N], x[N], u[N])
+    cost_state_hessian!(costs[N], lxx[N], x[N], u[N])
+
     # Optimal terminal cost-to-go second order expansion
     # p[N] .= lx[N] .+ cx[N]' * (λ[N] + Iμ[N] * c[N])
     λIμc = λIμcd[N]
@@ -138,6 +143,7 @@ function backward_pass(problem::Problem, ρ; verbosity=4)
     mul!(λIμc, Iμ[N], c[N], 1.0, 1.0)
     p[N] .= lx[N]
     mul!(p[N], cx[N]', λIμc, 1.0, 1.0)
+
     # P[N] .= lxx[N] .+ cx[N]' * Iμ[N] * cx[N]
     cxIμ = cxIμd[N]
     mul!(cxIμ, cx[N]', Iμ[N])
@@ -252,7 +258,10 @@ function backward_pass(problem::Problem, ρ; verbosity=4)
         mul!(p[k], Qux', d[k], 1.0, 1.0)
 
         ΔV₁ += dot(d[k], Qu)
-        ΔV₂ += 0.5 * dot(d[k], Quu * d[k])#dot(d[k], Quu, d[k])
+
+        # dot(d[k], Quu, d[k])
+        mul!(Qu, Quu, d[k])
+        ΔV₂ += 0.5 * dot(d[k], Qu)
     end
 
     return Δu_ff, ΔV₁, ΔV₂
