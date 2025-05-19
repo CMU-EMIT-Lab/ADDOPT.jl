@@ -30,11 +30,14 @@ function path_to_points(path, ds, Nk)
     return points
 end
 
+function gaussian_3d(x, y, z, px::T, py::T, pz::T, σ::T) where {T}
+    return T(exp(-0.5 * (((x - px) / σ)^2 + ((y - py) / σ)^2 + ((z - pz) / σ)^2)) / √((2π)^3) / σ^3)
+end
 
 function gaussian_3d!(mesh, px, py, pz, σ)
     map!((cidx) -> begin
             x, y, z = cidx[1], cidx[2], cidx[3]
-            return exp(-0.5 * (((x - px) / σ)^2 + ((y - py) / σ)^2 + ((z - pz) / σ)^2)) / √((2π)^3) / σ^3
+            return gaussian_3d(x, y, z, px, py, pz, σ)
         end, mesh, CartesianIndices(mesh))
 end
 
