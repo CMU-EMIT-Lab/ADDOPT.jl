@@ -1,7 +1,7 @@
 name = "ADDOPT"
 uuid = "2189172f-5fb7-4936-859f-1fe682574220"
-authors = ["Mikhail Khrenov"]
 version = "1.0.0-DEV"
+authors = ["Mikhail Khrenov"]
 
 [deps]
 CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
@@ -40,7 +40,7 @@ ImageTransformations = "0.10.1"
 Images = "0.26.2"
 JLD2 = "0.5.11"
 LinearAlgebra = "1.11.0"
-NLSolversBase = "7.8.3"
+NLSolversBase = "7.8.3, 8"
 Observables = "0.5.5"
 OptimalVoronoi = "0.1.0"
 Plots = "1"
