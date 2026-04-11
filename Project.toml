@@ -1,7 +1,7 @@
 name = "ADDOPT"
 uuid = "2189172f-5fb7-4936-859f-1fe682574220"
-authors = ["Mikhail Khrenov"]
 version = "1.0.0-DEV"
+authors = ["Mikhail Khrenov"]
 
 [deps]
 CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
@@ -30,7 +30,7 @@ Tables = "bd369af6-aec1-5ad0-b16a-f7cc5008161c"
 
 [compat]
 CSV = "0.10"
-CUDA = "5.6.1"
+CUDA = "5.6.1, 6"
 CoordinateTransformations = "0.6.4"
 DataFrames = "1"
 ExponentialUtilities = "1.27.0"
