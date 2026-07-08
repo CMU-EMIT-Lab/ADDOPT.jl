@@ -10,10 +10,7 @@ using JLD2
 
 HVmin = 135.0
 HVmax = 404.0
-# HVmin = 140.0
-# HVmax = 400.0
 y_init = (HVmax - 365) / (HVmax - HVmin)
-# y_init = (HVmax - 380) / (HVmax - HVmin)
 
 # Type setup
 Ty = Float32
@@ -54,9 +51,9 @@ k = 31.1e3 # W / kK
 cₚ = 720.0e3 # J / kg kK 
 
 # Tempering parameters
-lnA::Ty = 8.845 # 38.005
-n::Ty = 0.358 # 0.051590
-E::Ty = 56.277e-3 # 240.24 # kJ / mol K
+lnA::Ty = 8.845 
+n::Ty = 0.358 
+E::Ty = 56.277e-3 # kJ / mol K
 
 # lnA::Ty = 38.005
 # n::Ty = 0.051590

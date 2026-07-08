@@ -212,20 +212,9 @@ function backward_pass(problem::Problem, ρ; verbosity=4)
         Quu_scratch .+= Quu'
         Quu_scratch ./= 2.0
 
-        # TODO: something with diagonal dominance and iterative alg (e.g. CG) rather than factorization?
-        # Preconditioner
-        # Prec = diag(Quu_scratch)#maximum(Quu_scratch, dims=2)
-        # Quu_scratch ./= Prec
-
-        # @show maximum(Quu, dims=2)
-        # @show minimum(Quu, dims=2)
-        # Quu_scratch = Symmetric(Quu)
-        # Quu_scratch .+= Iρ
         Quu_factorized = LinearAlgebra.cholesky!(Hermitian(Quu_scratch), check=false)
 
-        # C, info = LinearAlgebra._chol!(Quu_scratch, UpperTriangular)
-        # Quu_factorized = Cholesky(C.data, 'L', info)
-        if !issuccess(Quu_factorized) # !isposdef(Quu_factorized)#
+        if !issuccess(Quu_factorized)
             if verbosity ≥ 4
                 println("Failing backward pass factorization at iteration $k")
             end
@@ -234,11 +223,11 @@ function backward_pass(problem::Problem, ρ; verbosity=4)
         # Quu_factorized = Quu_scratch
         # K[k] .= Quu \ Qux
         # Qux_s = Qux ./ Prec
-        ldiv!(K[k], Quu_factorized, Qux)#_s)
+        ldiv!(K[k], Quu_factorized, Qux)
         K[k] .*= -1
         # d[k] .= Quu \ Qu
         # Qu_s = Qu ./ vec(Prec)
-        ldiv!(d[k], Quu_factorized, Qu)#_s)
+        ldiv!(d[k], Quu_factorized, Qu)
         d[k] .*= -1
 
         Δu_ff += √(dot(d[k], d[k])) / N
