@@ -21,7 +21,7 @@ V = CuVector{Ty}
 M = CuMatrix{Ty}
 
 # Geometric parameters
-mask_img = Ty.(Gray.(load("examples/ebpbf/scotty_bw.png")))
+mask_img = Ty.(Gray.(load("examples/ebpbf/hardness/scotty_bw.png")))
 
 n_subsample = 5
 mask_img_blurred = imfilter(mask_img, Kernel.gaussian(n_subsample))
