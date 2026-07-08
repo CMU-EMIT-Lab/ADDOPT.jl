@@ -89,7 +89,7 @@ function powerfield_to_sequence_with_traverse(dt, τ, tmin, U::Vector{V}, px, py
 
             # Select minimum, update established powerfield circular array
             next_idx = argmin(error)
-            powerfield_established[powerfield_offset.+(1:steps_per_spot), :] .= view(powerfield_per_idx, next_idx, :, :)
+            powerfield_established[powerfield_offset .+ (1:steps_per_spot), :] .= view(powerfield_per_idx,next_idx,:,:)
 
             powerfield_offset = (powerfield_offset + steps_per_spot) % (2steps_per_frame - steps_per_spot)
             xi, yi = px[next_idx], py[next_idx]
@@ -98,5 +98,39 @@ function powerfield_to_sequence_with_traverse(dt, τ, tmin, U::Vector{V}, px, py
         end
     end
 
-    return seq, dwell, powerfield_established
+    return seq, dwell
+end
+
+function sequence_to_realized_powerfield(seq, τ, tmin, px, py, l, P, σ; steps_per_spot=5, V=Vector{Float32})
+    seq = vcat([1], seq)
+    N_spots = length(seq)
+    Nu = length(px)
+
+    cx, cy = cu(px), cu(py)
+    cx2 = reshape(cx, (1, Nu))
+    cy2 = reshape(cy, (1, Nu))
+
+    U_approx::Vector{V} = []
+    t = cu(collect(tmin .* (0:(steps_per_spot-1))))
+
+    spot_x_per_idx = CUDA.zeros(steps_per_spot)
+    spot_y_per_idx = CUDA.zeros(steps_per_spot)
+
+    powerfield_per_idx = CUDA.zeros(steps_per_spot, Nu)
+
+    progress = Progress(N_spots-1)
+    for s in 1:(N_spots-1)
+        # Compute trajectory to next spot
+        spot_x_per_idx .= px[seq[s+1]] .- (px[seq[s+1]] - px[seq[s]]) .* exp.(-t ./ τ)
+        spot_y_per_idx .= py[seq[s+1]] .- (py[seq[s+1]] - py[seq[s]]) .* exp.(-t ./ τ)
+
+        # Compute powerfields for all trajectories
+        powerfield_per_idx .= exp.(((cx2 .- spot_x_per_idx) .^ 2 .+ (cy2 .- spot_y_per_idx) .^ 2) ./ (-2σ^2))
+        powerfield_per_idx .*= (l^2 / (2π * σ^2)) * P
+
+        append!(U_approx, [Array(powerfield_per_idx[i, :]) for i in 1:steps_per_spot])
+        next!(progress)
+    end
+
+    return U_approx
 end
