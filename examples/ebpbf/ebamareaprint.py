@@ -43,30 +43,6 @@ def PlanOptiSpots(x, y, power, dwell, number, loc):
         f"{number}_{loc}.obp"
     )
 
-# This takes in x, y spots and adds line segments to ensure short dwell times are not truncated
-# This was corrected in the optimizer, so the travel time from one spot to the next should be included in the dwell time (i.e., use PlanOptiSpots)
-def PlanOptiLineSpots(x, y, power, dwell, scanname):
-    # from square import square
-    from obplib.Line import Line
-    from obplib.Point import Point
-    from obplib import FileHandler
-    from obplib.TimedPoints import TimedPoints
-    from obplib.Beamparameters import Beamparameters
-
-    spot_size = 92
-    # time = int(time * 1e6)
-    # times = []
-    # points = []
-    backspotx = 0
-    backspoty = 0
-    write_to_obpj(backspotx*1e-6, backspoty*1e-6, x[0], y[0], 'line', spot_size, 3000, 4e9, scanname, islast=False)
-    for i in range(len(x)-2):
-        write_to_obpj(x[i], y[i], None, None, 'timedpoints', spot_size, 3000, 1000, scanname, islast=False)
-        write_to_obpj(x[i],y[i],x[i+1],y[i+1],'line',spot_size, 3000, 1e9,scanname, islast=False)
-    write_to_obpj(x[-2], y[-2], None, None, 'timedpoints', spot_size, 3000, 1000, scanname, islast=False)
-    write_to_obpj(x[-2],y[-2],x[-1],y[-1],'line',spot_size, 3000, 1e9,scanname, islast=False)
-    write_to_obpj(x[-1], y[-1], None, None, 'timedpoints', spot_size, 3000, 1000, scanname, islast=True)
-
 
 # Just a writer.
 def write_to_obpj(x1, y1, x2, y2, scantype, spot_size, power, timing, scanname, islast):
@@ -166,11 +142,15 @@ def stack_patch_data(plan):
 if __name__ == "__main__":
     import numpy as np
     import obplib
+    import sys
 
     optimal_spots = {}
     # Machine Parameters
-    # filename = 'scan_strat_1.0_1.0.csv'
-    filename = 'scan_strat_optimized.csv'
+    
+    filename = 'scan_strat_optimized_1.csv'
+    if len(sys.argv) > 1:
+        filename = sys.argv[1]
+    print(f"Processing {filename}")
 
     # This loads the csv files into a dictionary
     # It's a bit bulky, but was originally set up to load multiple files. 
@@ -223,40 +203,4 @@ if __name__ == "__main__":
         number=filename.split('.')[0], # Both number and loc show up in the file name 
         loc = f"{xloc}_{yloc}"
         )
-
-# The commented out stuff was from when we were doing spot and line kind of stuff. 
-
-    # scanname = filename.split('.')[0]
-    # scanfile = open(f'{scanname}.obpj', 'w')
-    # scanfile.write('{\n')
-    # scanfile.write('"OBP":[\n')
-    # scanfile.close()
-    # print(xspots)
-    # PlanOptiLineSpots(xspots+15e-3, yspots-2.5e-3, 3000, dwell, scanname)
-    # scanfile = open(f'{scanname}.obpj', 'a')
-    # scanfile.write(']\n')
-    # scanfile.write('}')
-
-# if __name__ == "__main__":
-#     import os
-#     import numpy as np
-#     import matplotlib.pyplot as plt
-#     import re
-#     laser_power = 1000
-#     # directory = "path/to/csv/files"
-#     patches_per_row = 5  # since 50mm/5mm = 10
-#     patches = []
-#     plan = {}
-
-#     filanems = []
-#     filenames = os.listdir()
-#     filenames = [file for file in filenames if file.endswith(".csv")]
-#     filenames = sorted_files(filenames)
-#     for filename in filenames:
-#         if filename.endswith(".csv"):
-#             plan[filename] = np.loadtxt(filename, delimiter=',', skiprows=1)
-#             plan[filename] = {'X': plan[filename][:, 0], 'Y': plan[filename][:, 1], 'T': plan[filename][:, 2]}
-#     plan = adjust_patch_positions(plan)
-#     x_spots, y_spots, _ = stack_patch_data(plan)
-#     plotplan(x_spots, y_spots)
-#     PlanOptiSpots(x_spots, y_spots, 3000, 20, '30by30')
+    
