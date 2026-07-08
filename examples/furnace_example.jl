@@ -1,6 +1,7 @@
-include("../ADDOPT.jl")
+using ADDOPT
 using Plots
 using Profile
+using LinearAlgebra
 
 Pₘₐₓ = 800.0e-3  # kW
 T∞ = 293.15e-3    # K
@@ -49,19 +50,14 @@ U0 = [[600.0e-3] for _ in 1:(Nk-1)]
 @time al_ddp!(problem; maxiters=20, ϕ=2.0, gtol=1e-4, verbosity=2)
 rollout!(problem, U0)
 @time al_ddp!(problem; maxiters=20, ϕ=2.0, gtol=1e-4, verbosity=2)
-rollout!(problem, U0)
-@profview_allocs al_ddp!(problem; maxiters=20, ϕ=2.0) sample_rate = 0.001
-rollout!(problem, U0)
-@profview al_ddp!(problem; maxiters=20, ϕ=2.0)
 
-@time rollout!(problem, U0)
-@time al_ddp!(problem; maxiters=20, ϕ=2.0, gtol=1e-4, verbosity=2)
 X, U = problem.z.X, problem.z.U
 t = dt*0:(Nk-1)
 T = [x[1] for x in X]
 y = [x[2] for x in X]
 P = [u[1] for u in U]
-plot()
-plot!(t, T .* 1e3, label="T")
-plot!(t, y .* 100, label="ŷ")
-plot!(t, P .* 1e3, label="P")
+p = plot(xlabel="Time (s)")
+plot!(p, t, T .* 1e3, label="T")
+plot!(p, t, y .* 100, label="ŷ")
+plot!(p, t, P .* 1e3, label="P")
+savefig(p, "time_plot.png")

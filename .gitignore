@@ -42,3 +42,6 @@ venv/*
 /*.csv
 /*.mp4
 /*.obp
+/*.png
+/*.svg
+/*.pdf
