@@ -1,7 +1,7 @@
 function discretize_linear_dynamics(A::M, B::M, e, dt) where {M}
     nx, nu = size(B)
-    H = [A B M(I(nx));
-        M(zeros(nu + nx, nx + nu + nx))] # Dynamics matrix for combined system of x and u
+    H = vcat([A B M(I(nx))],
+        M(zeros(nu + nx, nx + nu + nx))) # Dynamics matrix for combined system of x and u
     H .*= dt
     G = exponential!(H) # State transition matrix for combined system
 
