@@ -34,3 +34,11 @@ output/*
 
 # VS Code Settings
 .vscode
+
+# Python virtual env
+venv/*
+
+# Output files
+/*.csv
+/*.mp4
+/*.obp
