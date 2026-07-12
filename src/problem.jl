@@ -88,86 +88,90 @@ struct Problem{T<:AbstractFloat,V<:AbstractVector{T},M<:AbstractMatrix{T},D<:Dyn
         Iρ = Dict{Int,Diagonal{T,V}}()
 
         for k in 1:Nk
-            n, m, c = nx(process.dynamics[k]), nu(process.dynamics[k]), nc(constraints[k])
-            if !haskey(A_d, (n, n))
-                A_d[(n, n)] = M(undef, n, n)
+            nₖ = nx(process.dynamics[k])
+            nₖ₊₁ = (k < Nk) ? nx(process.dynamics[k+1]) : nₖ
+            m = nu(process.dynamics[k])
+            c = nc(constraints[k])
+
+            if !haskey(A_d, (nₖ₊₁, nₖ))
+                A_d[(nₖ₊₁, nₖ)] = zeros(nₖ₊₁, nₖ)
             end
-            if !haskey(B_d, (n, m))
-                B_d[(n, m)] = M(undef, n, m)
+            if !haskey(B_d, (nₖ₊₁, m))
+                B_d[(nₖ₊₁, m)] = zeros(nₖ₊₁, m)
             end
-            if !haskey(Apx_d, (n, n))
-                Apx_d[(n, n)] = M(undef, n, n)
+            if !haskey(Apx_d, (nₖ, nₖ))
+                Apx_d[(nₖ, nₖ)] = zeros(nₖ, nₖ)
             end
             if !haskey(Bpu_d, (m, m))
-                Bpu_d[(m, m)] = M(undef, m, m)
+                Bpu_d[(m, m)] = zeros(m, m)
             end
-            if !haskey(Bpx_d, (m, n))
-                Bpx_d[(m, n)] = M(undef, m, n)
+            if !haskey(Bpx_d, (m, nₖ))
+                Bpx_d[(m, nₖ)] = zeros(m, nₖ)
             end
-            if !haskey(cx_d, (c, n))
-                cx_d[(c, n)] = M(undef, c, n)
+            if !haskey(cx_d, (c, nₖ))
+                cx_d[(c, nₖ)] = zeros(c, nₖ)
             end
             if !haskey(cu_d, (c, m))
-                cu_d[(c, m)] = M(undef, c, m)
+                cu_d[(c, m)] = zeros(c, m)
             end
-            if !haskey(lx_d, n)
-                lx_d[n] = V(undef, n)
+            if !haskey(lx_d, nₖ)
+                lx_d[nₖ] = zeros(nₖ)
             end
             if !haskey(lu_d, m)
-                lu_d[m] = V(undef, m)
+                lu_d[m] = zeros(m)
             end
-            if !haskey(lxx_d, (n, n))
-                lxx_d[(n, n)] = M(undef, n, n)
+            if !haskey(lxx_d, (nₖ, nₖ))
+                lxx_d[(nₖ, nₖ)] = zeros(nₖ, nₖ)
             end
             if !haskey(luu_d, (m, m))
-                luu_d[(m, m)] = M(undef, m, m)
+                luu_d[(m, m)] = zeros(m, m)
             end
-            if !haskey(lux_d, (m, n))
-                lux_d[(m, n)] = M(undef, m, n)
+            if !haskey(lux_d, (m, nₖ))
+                lux_d[(m, nₖ)] = zeros(m, nₖ)
             end
-            if !haskey(Qx, n)
-                Qx[n] = V(undef, n)
+            if !haskey(Qx, nₖ)
+                Qx[nₖ] = zeros(nₖ)
             end
             if !haskey(Qu, m)
-                Qu[m] = V(undef, m)
+                Qu[m] = zeros(m)
             end
-            if !haskey(Qxx, (n, n))
-                Qxx[(n, n)] = M(undef, n, n)
+            if !haskey(Qxx, (nₖ, nₖ))
+                Qxx[(nₖ, nₖ)] = zeros(nₖ, nₖ)
             end
             if !haskey(Quu, (m, m))
-                Quu[(m, m)] = M(undef, m, m)
+                Quu[(m, m)] = zeros(m, m)
             end
-            if !haskey(Qux, (m, n))
-                Qux[(m, n)] = M(undef, m, n)
+            if !haskey(Qux, (m, nₖ))
+                Qux[(m, nₖ)] = zeros(m, nₖ)
             end
-            if !haskey(AtP, (n, n))
-                AtP[(n, n)] = M(undef, n, n)
+            if !haskey(AtP, (nₖ, nₖ₊₁))
+                AtP[(nₖ, nₖ₊₁)] = zeros(nₖ, nₖ₊₁)
             end
-            if !haskey(BtP, (m, n))
-                BtP[(m, n)] = M(undef, m, n)
+            if !haskey(BtP, (m, nₖ₊₁))
+                BtP[(m, nₖ₊₁)] = zeros(m, nₖ₊₁)
             end
-            if !haskey(KtQu, (n, m))
-                KtQu[(n, m)] = M(undef, n, m)
+            if !haskey(KtQu, (nₖ, m))
+                KtQu[(nₖ, m)] = zeros(nₖ, m)
             end
             if !haskey(λIμc, c)
-                λIμc[c] = V(undef, c)
+                λIμc[c] = zeros(c)
             end
-            if !haskey(cxIμ, (n, c))
-                cxIμ[(n, c)] = M(undef, n, c)
+            if !haskey(cxIμ, (nₖ, c))
+                cxIμ[(nₖ, c)] = zeros(nₖ, c)
             end
             if !haskey(cuIμ, (m, c))
-                cuIμ[(m, c)] = M(undef, m, c)
+                cuIμ[(m, c)] = zeros(m, c)
             end
             if !haskey(Quus, (m, m))
-                Quus[(m, m)] = M(undef, m, m)
+                Quus[(m, m)] = zeros(m, m)
             end
             if !haskey(Iρ, m)
-                Iρ[m] = Diagonal(V(undef, m))
+                Iρ[m] = Diagonal(zeros(m))
             end
         end
 
-        A = [A_d[(nx(dynamics[k]), nx(dynamics[k]))] for k in 1:(Nk-1)]
-        B = [B_d[(nx(dynamics[k]), nu(dynamics[k]))] for k in 1:(Nk-1)]
+        A = [A_d[(nx(dynamics[k+1]), nx(dynamics[k]))] for k in 1:(Nk-1)]
+        B = [B_d[(nx(dynamics[k+1]), nu(dynamics[k]))] for k in 1:(Nk-1)]
         Apx = [Apx_d[(nx(dynamics[k]), nx(dynamics[k]))] for k in 1:(Nk-1)]
         Bpu = [Bpu_d[(nu(dynamics[k]), nu(dynamics[k]))] for k in 1:(Nk-1)]
         Bpx = [Bpx_d[(nu(dynamics[k]), nx(dynamics[k]))] for k in 1:(Nk-1)]
@@ -186,8 +190,8 @@ struct Problem{T<:AbstractFloat,V<:AbstractVector{T},M<:AbstractMatrix{T},D<:Dyn
         Qxxd = [Qxx[(nx(process.dynamics[k]), nx(process.dynamics[k]))] for k in 1:Nk]
         Quud = [Quu[(nu(process.dynamics[k]), nu(process.dynamics[k]))] for k in 1:Nk]
         Quxd = [Qux[(nu(process.dynamics[k]), nx(process.dynamics[k]))] for k in 1:Nk]
-        AtPd = [AtP[(nx(process.dynamics[k]), nx(process.dynamics[k]))] for k in 1:Nk]
-        BtPd = [BtP[(nu(process.dynamics[k]), nx(process.dynamics[k]))] for k in 1:Nk]
+        AtPd = [AtP[(nx(process.dynamics[k]), nx(process.dynamics[k < Nk ? k+1 : Nk]))] for k in 1:Nk]
+        BtPd = [BtP[(nu(process.dynamics[k]), nx(process.dynamics[k < Nk ? k+1 : Nk]))] for k in 1:Nk]
         KtQud = [KtQu[(nx(process.dynamics[k]), nu(process.dynamics[k]))] for k in 1:Nk]
         λIμcd = [λIμc[nc(constraints[k])] for k in 1:Nk]
         cxIμd = [cxIμ[(nx(process.dynamics[k]), nc(constraints[k]))] for k in 1:Nk]
@@ -195,11 +199,11 @@ struct Problem{T<:AbstractFloat,V<:AbstractVector{T},M<:AbstractMatrix{T},D<:Dyn
         Quusd = [Quus[(nu(process.dynamics[k]), nu(process.dynamics[k]))] for k in 1:Nk]
         Iρd = [Iρ[nu(process.dynamics[k])] for k in 1:Nk]
 
-        P::Vector{M} = [M(undef, nx(dynamics[k]), nx(dynamics[k])) for k in 1:Nk]
-        p::Vector{V} = [V(undef, nx(dynamics[k])) for k in 1:Nk]
+        P::Vector{M} = [zeros(nx(dynamics[k]), nx(dynamics[k])) for k in 1:Nk]
+        p::Vector{V} = [zeros(nx(dynamics[k])) for k in 1:Nk]
 
-        K::Vector{M} = [M(undef, nu(dynamics[k]), nx(dynamics[k])) for k in 1:Nk]
-        d::Vector{V} = [V(undef, nu(dynamics[k])) for k in 1:Nk]
+        K::Vector{M} = [zeros(nu(dynamics[k]), nx(dynamics[k])) for k in 1:Nk]
+        d::Vector{V} = [zeros(nu(dynamics[k])) for k in 1:Nk]
 
         new{T,V,M,D,C,H}(x₀,
             process, z, z̄, v, v̄,

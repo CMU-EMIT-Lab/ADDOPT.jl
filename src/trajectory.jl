@@ -19,8 +19,8 @@ struct Trajectory{T<:AbstractFloat,V<:AbstractVector{T}}
         Nk = process.Nk
         dynamics = process.dynamics
 
-        X::Vector{V} = [V(undef, nx(dynamics[k])) for k in 1:Nk]
-        U::Vector{V} = [V(undef, nu(dynamics[k])) for k in 1:Nk]
+        X::Vector{V} = [zeros(nx(dynamics[k])) for k in 1:Nk]
+        U::Vector{V} = [zeros(nu(dynamics[k])) for k in 1:Nk]
 
         U[end] .= 0
 
@@ -32,8 +32,8 @@ struct Trajectory{T<:AbstractFloat,V<:AbstractVector{T}}
         Nk = trajectory.Nk
         X, U = trajectory.X, trajectory.U
 
-        X::Vector{V} = [V(undef, length(x)) for x in X]
-        U::Vector{V} = [V(undef, length(u)) for u in U]
+        X::Vector{V} = [zeros(length(x)) for x in X]
+        U::Vector{V} = [zeros(length(u)) for u in U]
         U[end] .= 0
 
         new{T,V}(Nk, X, U)
@@ -58,9 +58,9 @@ struct ConstraintTrajectory{T<:AbstractFloat,V<:AbstractVector{T}}
     function ConstraintTrajectory(process::Process{T,V,D}, constraints) where {T<:AbstractFloat,V<:AbstractVector{T},D<:Dynamics{T}}
         Nk = process.Nk
 
-        c::Vector{V} = [V(undef, nc(constraints[k])) for k in 1:Nk]
-        λ::Vector{V} = [V(undef, nc(constraints[k])) for k in 1:Nk]
-        Iμ::Vector{Diagonal{T,V}} = [Diagonal(V(undef, nc(constraints[k]))) for k in 1:Nk]
+        c::Vector{V} = [zeros(nc(constraints[k])) for k in 1:Nk]
+        λ::Vector{V} = [zeros(nc(constraints[k])) for k in 1:Nk]
+        Iμ::Vector{Diagonal{T,V}} = [Diagonal(zeros(nc(constraints[k]))) for k in 1:Nk]
 
         new{T,V}(Nk, c, λ, Iμ)
     end
