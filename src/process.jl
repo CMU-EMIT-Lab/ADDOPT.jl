@@ -1,7 +1,7 @@
 
 function rollout!(dynamics, Nk::Int, x₀::V, X::Vector{V}, U::Vector{V}) where {T<:AbstractFloat,V<:AbstractVector{T}}
     X[1] .= x₀
-    p = Progress(Nk-1)
+    p = Progress(Nk-1, desc="Simulating...")
 
     for k in 1:(Nk-1)
         transition!(dynamics[k], X[k+1], X[k], U[k])
@@ -14,7 +14,7 @@ function rollout!(dynamics, Nk::Int, x₀::V1, X::Vector{V2}, U::Vector{V1}) whe
 
     xₖ = copy(x₀)
     xₖ₊₁ = copy(x₀)
-    p = Progress(Nk-1)
+    p = Progress(Nk-1, desc="Simulating...")
 
     for k in 1:(Nk-1)
         transition!(dynamics[k], xₖ₊₁, xₖ, U[k])
@@ -30,7 +30,7 @@ function rollout!(dynamics, Nk::Int, x₀::V1, X::Vector{V2}, U::Vector{V2}) whe
 
     xₖ = copy(x₀)
     xₖ₊₁ = copy(x₀)
-    p = Progress(Nk-1)
+    p = Progress(Nk-1, desc="Simulating...")
 
     for k in 1:(Nk-1)
         transition!(dynamics[k], xₖ₊₁, xₖ, V1(U[k]))
@@ -42,7 +42,7 @@ function rollout!(dynamics, Nk::Int, x₀::V1, X::Vector{V2}, U::Vector{V2}) whe
 end
 
 function rollout!(process::Process, trajectory::Trajectory, x₀, U)
-    p = Progress(process.Nk-1)
+    p = Progress(process.Nk-1, desc="Simulating...")
 
     for k in 1:(process.Nk-1)
         trajectory.U[k] .= U[k]
